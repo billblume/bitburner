@@ -26,7 +26,3 @@ Commands run and exit quickly.  Services will run until killed.
 * scan.ts: Prints out all servers in the system and their stats.  Meant as a replacement to the scan-analyze command.
 * stock-sellall.js: Sell all stocks owned in the stock market.  Useful to execute before installing augments.
 * watcher.js: Management script inherited from [Bitburner VSCode Template](https://github.com/bitburner-official/bitburner-vscode).
-
-## About me
-
-I am a senior software engineer with plenty of experience with writing javascript but not much experience with the latest frameworks and tools.   This is the first project that I've used typescript.
