@@ -206,7 +206,7 @@ function getServerBudget(ns: NS): number {
     let budget = 0;
 
     if (money <= SERVER_BUDGET_RATIO_LOW_CUTOFF) {
-        budget = money * SERVER_BUDGET_RAITO_LOW;
+        budget = money * SERVER_BUDGET_RATIO_LOW;
     } else {
         budget = SERVER_BUDGET_RATIO_LOW_CUTOFF * SERVER_BUDGET_RATIO_LOW +
             (money - SERVER_BUDGET_RATIO_LOW_CUTOFF) * SERVER_BUDGET_RATIO_HIGH;
