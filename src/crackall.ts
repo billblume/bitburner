@@ -30,7 +30,7 @@ function canBackdoor(ns: NS, hostname: string): boolean {
         return false;
     }
 
-    if (hostname == 'home' || hostname.startsWith('pserv-')) {
+    if (hostname == 'home' || hostname.startsWith('pserv-') || hostname.startsWith('hacknet-node-')) {
         return false;
     }
 
