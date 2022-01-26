@@ -369,7 +369,7 @@ function getBestServer(ns: NS, hostnames: string[]): string {
     const availThreads = estimateAvailableThreads(ns, hostnames);
     // ns.print(`There are ${availThreads} available server threads.`);
     const serverScores = getServerScores(ns, hostnames, availThreads);
-    // serverScores.forEach(score => printScore(ns, score));
+    serverScores.forEach(score => printScore(ns, score));
     const bestHostname = serverScores[0].hostname;
     ns.print(`Selected server ${bestHostname} for hacking`);
     // printScore(ns, serverScores[0]);
@@ -417,13 +417,14 @@ function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerS
     const maxMoney = ns.getServerMaxMoney(hostname);
     const security = ns.getServerSecurityLevel(hostname);
     const minSecurity = ns.getServerMinSecurityLevel(hostname);
-    const securityMult = (100 - minSecurity) / (100 - security);
+    const hackMoneyAdjustment = security < 100 ? (100 - minSecurity) / (100 - security) : 1;
+    const timeAdjustment = minSecurity / security;
     const farmableMoney = maxMoney * HACK_MONEY_FRACTION;
     const growthAmount = 1 / (1 - HACK_MONEY_FRACTION);
-    const growThreads = Math.ceil(ns.growthAnalyze(hostname, growthAmount) / securityMult);
-    const hackThreads = Math.ceil(HACK_MONEY_FRACTION / ns.hackAnalyze(hostname) / securityMult);
+    const growThreads = Math.ceil(ns.growthAnalyze(hostname, growthAmount) * timeAdjustment);
+    const hackThreads = Math.ceil(HACK_MONEY_FRACTION  * hackMoneyAdjustment / (ns.hackAnalyze(hostname)));
     const cycles = Math.ceil(growThreads / totalThreads) + Math.ceil(hackThreads / totalThreads);
-    const hackTime = Math.ceil(ns.getHackTime(hostname) / 1000 / securityMult);
+    const hackTime = Math.ceil(ns.getHackTime(hostname) * timeAdjustment / 100);
     const moneyPerSec = Math.floor(farmableMoney * ESTIMATED_PERCENT_TIME_HACKING / hackTime / cycles);
 
     const score = moneyPerSec;
