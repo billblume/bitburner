@@ -17,9 +17,10 @@ export async function main(ns: NS): Promise<void> {
 
 function runContract(ns: NS, hostname: string, filename: string): void {
     const type = ns.codingcontract.getContractType(filename, hostname);
-    const description = ns.codingcontract.getDescription(filename, hostname);
+    let description = ns.codingcontract.getDescription(filename, hostname);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const data = ns.codingcontract.getData(filename, hostname);
+    description = description.replace('&nbsp;', ' ');
 
     ns.tprint(`INFO: ${hostname}/${filename}: ${type}\n${description}`);
     let answer = null;
