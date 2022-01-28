@@ -20,7 +20,7 @@ function runContract(ns: NS, hostname: string, filename: string): void {
     let description = ns.codingcontract.getDescription(filename, hostname);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const data = ns.codingcontract.getData(filename, hostname);
-    description = description.replace('&nbsp;', ' ');
+    description = description.replaceAll('&nbsp;', ' ');
 
     ns.tprint(`INFO: ${hostname}/${filename}: ${type}\n${description}`);
     let answer = null;
