@@ -18,9 +18,11 @@ const RESERVED_HOME_RAM = 128;
 const HACKNET_RAM_SCRIPTING_FRACTION = 0.5;
 const MIN_AVAILABLE_RAM = 4;
 const MAX_WEAKEN_TIME = 5 * 60;
-const ESTIMATED_PERCENT_TIME_HACKING = 0.2;
+const GROW_TIME_MULTIPLIER = 3.2;
+const WEAKEN_TIME_MULTIPLIER = 4;
 const WEAKEN_LOWER_THRESHOLD = 0.95;
 const WEAKEN_UPPER_THRESHOLD = 1;
+const WEAKEN_AMOUNT = 0.05;
 const GROW_LOWER_THRESHOLD = 0.75;
 const GROW_UPPER_THRESHOLD = 0.9;
 const HACK_MONEY_FRACTION = 0.5;
@@ -40,8 +42,7 @@ interface ServerScore {
     minSecurity: number,
     growThreads: number,
     hackThreads: number,
-    cycles: number,
-    hackTime: number,
+    cycleTime: number,
     moneyPerSec: number
 }
 
@@ -417,15 +418,25 @@ function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerS
     const maxMoney = ns.getServerMaxMoney(hostname);
     const security = ns.getServerSecurityLevel(hostname);
     const minSecurity = ns.getServerMinSecurityLevel(hostname);
-    const hackMoneyAdjustment = security < 100 ? (100 - minSecurity) / (100 - security) : 1;
     const timeAdjustment = minSecurity / security;
-    const farmableMoney = maxMoney * HACK_MONEY_FRACTION;
+
     const growthAmount = 1 / (1 - HACK_MONEY_FRACTION);
     const growThreads = Math.ceil(ns.growthAnalyze(hostname, growthAmount) * timeAdjustment);
+    const growCycles =  Math.ceil(growThreads / totalThreads);
+    const growSecIncrease = ns.growthAnalyzeSecurity(growThreads);
+
+    const hackMoneyAdjustment = security < 100 ? (100 - minSecurity) / (100 - security) : 1;
     const hackThreads = Math.ceil(HACK_MONEY_FRACTION  * hackMoneyAdjustment / (ns.hackAnalyze(hostname)));
-    const cycles = Math.ceil(growThreads / totalThreads) + Math.ceil(hackThreads / totalThreads);
-    const hackTime = Math.ceil(ns.getHackTime(hostname) * timeAdjustment / 100);
-    const moneyPerSec = Math.floor(farmableMoney * ESTIMATED_PERCENT_TIME_HACKING / hackTime / cycles);
+    const hackCycles =  Math.ceil(hackThreads / totalThreads);
+    const hackSecIncrease = ns.hackAnalyzeSecurity(hackThreads);
+    const hackTime = ns.getHackTime(hostname) * timeAdjustment / 1000;
+
+    const weakenThreads = growSecIncrease * hackSecIncrease / WEAKEN_AMOUNT;
+    // We purposefully don't put a ceiling on the weakens, since we don't always do a weaken for every hack/grow cycle.
+    const weakenCycles = weakenThreads / totalThreads;
+
+    const cycleTime = (growCycles * GROW_TIME_MULTIPLIER + hackCycles + weakenCycles * WEAKEN_TIME_MULTIPLIER) * hackTime;
+    const moneyPerSec = Math.floor(maxMoney * HACK_MONEY_FRACTION / cycleTime);
 
     const score = moneyPerSec;
 
@@ -437,8 +448,7 @@ function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerS
         minSecurity: minSecurity,
         growThreads: growThreads,
         hackThreads: hackThreads,
-        cycles: cycles,
-        hackTime: hackTime,
+        cycleTime: cycleTime,
         moneyPerSec: moneyPerSec
     };
 }
@@ -446,7 +456,7 @@ function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerS
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function printScore(ns: NS, score: ServerScore): void {
     ns.print(ns.sprintf(
-        '%s: Money: %s (%s/s), Sec: %d/%d, Thr: G:%d/H:%d, Hack: %ds, Cyc: %d',
+        '%s: Money: %s (%s/s), Sec: %d/%d, Thr: G:%d/H:%d, Cyc Time: %.1fs',
         score.hostname,
         ns.nFormat(score.maxMoney, '$0.00a'),
         ns.nFormat(score.moneyPerSec, '$0.00a'),
@@ -454,8 +464,7 @@ function printScore(ns: NS, score: ServerScore): void {
         score.minSecurity,
         score.growThreads,
         score.hackThreads,
-        score.hackTime,
-        score.cycles
+        score.cycleTime
     ));
 }
 
