@@ -1,6 +1,7 @@
 import { NS } from '@ns'
 import { getAllServerHostnames } from '/lib/server';
 import { canCrackServer, crackServer } from '/lib/crack';
+import { toPath } from 'lodash';
 
 const SERVER_BUY_AND_CRACK_FREQUENCY = 10;
 const SERVER_BUDGET_RATIO_LOW = 0.5;
@@ -418,7 +419,7 @@ function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerS
     const maxMoney = ns.getServerMaxMoney(hostname);
     const security = ns.getServerSecurityLevel(hostname);
     const minSecurity = ns.getServerMinSecurityLevel(hostname);
-    const timeAdjustment = minSecurity / security;
+    const timeAdjustment = getHackingSkillFactor(ns, hostname, minSecurity) / getHackingSkillFactor(ns, hostname, security);
 
     const growthAmount = 1 / (1 - HACK_MONEY_FRACTION);
     const growThreads = Math.ceil(ns.growthAnalyze(hostname, growthAmount) * timeAdjustment);
@@ -431,7 +432,7 @@ function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerS
     const hackSecIncrease = ns.hackAnalyzeSecurity(hackThreads);
     const hackTime = ns.getHackTime(hostname) * timeAdjustment / 1000;
 
-    const weakenThreads = growSecIncrease * hackSecIncrease / WEAKEN_AMOUNT;
+    const weakenThreads = (growSecIncrease + hackSecIncrease) / WEAKEN_AMOUNT;
     // We purposefully don't put a ceiling on the weakens, since we don't always do a weaken for every hack/grow cycle.
     const weakenCycles = weakenThreads / totalThreads;
 
@@ -451,6 +452,14 @@ function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerS
         cycleTime: cycleTime,
         moneyPerSec: moneyPerSec
     };
+}
+
+// Taken from https://github.com/danielyxie/bitburner/blob/dev/src/Hacking.ts
+function getHackingSkillFactor(ns: NS, hostname: string, hackDifficulty: number) {
+    const difficultyMult = ns.getServerRequiredHackingLevel(hostname) * hackDifficulty;
+    const baseDiff = 500;
+    const diffFactor = 2.5;
+    return diffFactor * difficultyMult + baseDiff;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
