@@ -20,6 +20,8 @@ class StockTrader {
     symbols: string[];
     priceHistory: Record<string, number[]>;
     has4SMarketData: boolean;
+    totalCosts: number;
+    totalSales: number;
 
     constructor(ns: NS) {
         this.ns = ns;
@@ -27,6 +29,8 @@ class StockTrader {
         ns.enableLog('print');
         this.symbols = ns.stock.getSymbols();
         this.priceHistory = {};
+        this.totalCosts = 0;
+        this.totalSales = 0;
 
         for (const sym of this.symbols) {
             this.priceHistory[sym] = [];
@@ -81,6 +85,7 @@ class StockTrader {
 
     sellStocks(): void {
         const positions = this.readPositions();
+        let soldStock = false;
 
         for (const sym in positions) {
             const position = positions[sym];
@@ -91,15 +96,34 @@ class StockTrader {
 
                 if (action == 'sell') {
                     const price = this.ns.stock.getSaleGain(sym, shares, 'Long');
+                    const avgPx = position[1];
+                    const cost = shares * avgPx;
+                    const profit = price - cost;
                     this.ns.print(this.ns.sprintf(
-                        'Selling %d shares of %s for %s',
+                        'Selling %d shares of %s for %s, (Profit: %s %.02f%%)',
                         shares,
                         sym,
                         this.ns.nFormat(price, '$0.000a'),
+                        this.ns.nFormat(profit, '$0.000a'),
+                        price > 0 ? 100 * profit / price : 0
                     ));
                     this.ns.stock.sell(sym, shares);
+                    this.totalCosts += cost;
+                    this.totalSales += price;
+                    soldStock = true;
                 }
             }
+        }
+
+        if (soldStock) {
+            const totalProfits = this.totalSales - this.totalCosts;
+            this.ns.print(this.ns.sprintf(
+                'Total sales %s, profits %s %.03f%%',
+                this.ns.nFormat(this.totalSales, '$0.000a'),
+                this.ns.nFormat(totalProfits, '$0.000a'),
+                this.totalSales > 0 ? 100 * totalProfits / this.totalSales : 0
+            ));
+
         }
     }
 
@@ -111,7 +135,9 @@ class StockTrader {
             return;
         }
 
-        const buySyms = this.symbols.filter(sym => this.getStockAction(sym) == 'buy');
+        const buySyms = this.symbols
+            .filter(sym => this.ns.stock.getMaxShares(sym) > positions[sym][0])
+            .filter(sym => this.getStockAction(sym) == 'buy');
 
         if (buySyms.length == 0) {
             return;
