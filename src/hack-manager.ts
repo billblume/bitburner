@@ -1,9 +1,10 @@
 import { NS } from '@ns'
 import { getAllServerHostnames } from '/lib/server';
 import { canCrackServer, crackServer } from '/lib/crack';
-import { toPath } from 'lodash';
+import { ServerHackScore } from './lib/ServerHackScore';
+import { ServerHackScheduler, ServerThreads } from '/lib/ServerHackScheduler';
 
-const SERVER_BUY_AND_CRACK_FREQUENCY = 10;
+const SERVER_BUY_AND_CRACK_SECS = 5 * 60;
 const SERVER_BUDGET_RATIO_LOW = 0.5;
 const SERVER_BUDGET_RATIO_LOW_CUTOFF = 1e6;
 const SERVER_BUDGET_RATIO_HIGH = 0.01;
@@ -15,70 +16,33 @@ const HACKNET_CACHE_WEIGHT = 2;
 const HACKNET_MONEY_SELL_ALL_HASHES = 25000000;
 const HACKNET_MAX_HASH_CAPACITY_RATIO = 0.8;
 
-const RESERVED_HOME_RAM = 128;
-const HACKNET_RAM_SCRIPTING_FRACTION = 0.5;
-const MIN_AVAILABLE_RAM = 4;
 const MAX_WEAKEN_TIME = 5 * 60;
-const GROW_TIME_MULTIPLIER = 3.2;
-const WEAKEN_TIME_MULTIPLIER = 4;
-const WEAKEN_LOWER_THRESHOLD = 0.95;
-const WEAKEN_UPPER_THRESHOLD = 1;
-const WEAKEN_AMOUNT = 0.05;
-const GROW_LOWER_THRESHOLD = 0.75;
-const GROW_UPPER_THRESHOLD = 0.9;
 const HACK_MONEY_FRACTION = 0.5;
-
-enum HackAction {
-    Grow = 'grow',
-    Weaken = 'weaken',
-    Hack = 'hack',
-    None = 'none',
-}
-
-interface ServerScore {
-    hostname: string,
-    score: number,
-    maxMoney: number,
-    security: number,
-    minSecurity: number,
-    growThreads: number,
-    hackThreads: number,
-    cycleTime: number,
-    moneyPerSec: number
-}
-
-interface HackTimings {
-    [key: string]: number
-}
 
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
     ns.enableLog('print');
-    let farmableHostnames: string[] = [];
-    let targetHostname = '';
-    let lastAction = HackAction.None;
-    const timings: HackTimings = {};
-    Object.values(HackAction).forEach(action => timings[action] = 0);
+    let targetHostnames: ServerThreads[] = [];
+    const scheduler = new ServerHackScheduler(ns);
+    await scheduler.updateServerInfo();
+    scheduler.killAllAgents();
+    let lastBuyAndHackTime = 0;
 
     for (let cycle = 0; ; ++cycle) {
-        if (cycle % SERVER_BUY_AND_CRACK_FREQUENCY == 0) {
+        const now = (new Date()).getTime() / 1000;
+
+        if (now >= lastBuyAndHackTime + SERVER_BUY_AND_CRACK_SECS) {
+            scheduler.printStats();
             sellExcessHacknetHashes(ns);
             const rootedHostnames = buyAndCrackServers(ns);
-            targetHostname = getBestServer(ns, rootedHostnames);
-            farmableHostnames = getFarmableHostnames(ns, rootedHostnames);
-            await installAgents(ns, farmableHostnames);
-            spendHacknetHashes(ns, targetHostname);
+            await scheduler.updateServerInfo();
+            targetHostnames = getBestServers(ns, rootedHostnames, scheduler.getTotalThreads());
+            scheduler.setServersToHack(targetHostnames);
+            spendHacknetHashes(ns, targetHostnames);
+            lastBuyAndHackTime = now;
         }
 
-        const action: HackAction = await hackServer(
-            ns,
-            targetHostname,
-            farmableHostnames,
-            cycle,
-            lastAction,
-            timings
-        );
-        lastAction = action;
+        await scheduler.runOneCycle();
     }
 
     return Promise.resolve();
@@ -108,7 +72,7 @@ function sellExcessHacknetHashes(ns: NS): void {
     }
 }
 
-function spendHacknetHashes(ns: NS, targetHostname: string): void {
+function spendHacknetHashes(ns: NS, targetHostnames: ServerThreads[]): void {
     let success = true;
 
     while (success) {
@@ -156,13 +120,13 @@ function spendHacknetHashes(ns: NS, targetHostname: string): void {
             }
         }
 
-        success = spendHashes(ns, 'Reduce Minimum Security', targetHostname);
+        success = spendHashes(ns, 'Reduce Minimum Security', targetHostnames[0].hostname);
 
         if (success) {
             continue;
         }
 
-        success = spendHashes(ns, 'Increase Maximum Money', targetHostname);
+        success = spendHashes(ns, 'Increase Maximum Money', targetHostnames[0].hostname);
 
         if (success) {
             continue;
@@ -194,7 +158,7 @@ function spendHashes(ns: NS, upgName: string, upgTarget?: string|undefined): boo
 
 function buyAndCrackServers(ns: NS): string[] {
     const budget = getServerBudget(ns);
-    ns.print(`Server budget: ` + ns.nFormat(budget, '$0.00a'));
+    ns.print(`INFO: Server budget: ` + ns.nFormat(budget, '$0.00a'));
     buyPrivateServers(ns, budget);
     buyHacknetServers(ns, budget);
     const allHostnames = getAllServerHostnames(ns);
@@ -367,272 +331,35 @@ function crackServers(ns: NS, hostnames: string[]): void {
     }
 }
 
-function getBestServer(ns: NS, hostnames: string[]): string {
-    const availThreads = estimateAvailableThreads(ns, hostnames);
-    // ns.print(`There are ${availThreads} available server threads.`);
+function getBestServers(ns: NS, hostnames: string[], availThreads: number): ServerThreads[] {
+    ns.print(`INFO: There are ${availThreads} available server threads.`);
     const serverScores = getServerScores(ns, hostnames, availThreads);
-    serverScores.forEach(score => printScore(ns, score));
-    const bestHostname = serverScores[0].hostname;
-    ns.print(`Selected server ${bestHostname} for hacking`);
-    // printScore(ns, serverScores[0]);
-    return bestHostname;
-}
+    const bestServers: ServerThreads[] = [];
+    const serverDescrs: string[] = [];
 
-function estimateAvailableThreads(ns: NS, hostnames: string[]): number {
-    let totalThreads = 0;
-    const growRam = ns.getScriptRam(getScript(HackAction.Grow));
+    for (const score of serverScores) {
+        ns.print('INFO: Est: ' + score.toString(ns));
+        const threads = Math.max(score.weakenThreads, score.initialWeakenThreads, score.hackThreads, score.growThreads);
 
-    for (const hostname of hostnames) {
-        const availRam = getServerAvailableRam(ns, hostname);
-        totalThreads += Math.floor(availRam / growRam);
+        if (bestServers.length == 0 || availThreads >= threads) {
+            bestServers.push({
+               hostname: score.hostname,
+               threads: threads
+            });
+            serverDescrs.push(`${score.hostname}:${threads}`);
+            availThreads -= threads;
+        }
     }
 
-    return totalThreads;
+    ns.print(`Selected servers ${serverDescrs.join(', ')} for hacking`);
+    return bestServers;
 }
 
-function getServerAvailableRam(ns: NS, hostname: string): number {
-    let ram = ns.getServerMaxRam(hostname);
-
-    if (hostname == 'home') {
-        ram = Math.max(0, ram - RESERVED_HOME_RAM);
-    } else if (hostname.startsWith('hacknet-node-')) {
-        ram = Math.floor(ram * HACKNET_RAM_SCRIPTING_FRACTION);
-    }
-
-    if (ram < MIN_AVAILABLE_RAM) {
-        return 0;
-    }
-
-    return ram;
-}
-
-function getServerScores(ns: NS, hostnames: string[], totalThreads: number): ServerScore[] {
+function getServerScores(ns: NS, hostnames: string[], totalThreads: number): ServerHackScore[] {
     return hostnames
         .filter(hostname => hostname != 'home')
         .filter(hostname => ns.getServerMoneyAvailable(hostname) > 0)
         .filter(hostname => ns.getWeakenTime(hostname) / 1000 <= MAX_WEAKEN_TIME)
-        .map(hostname => getServerScore(ns, hostname, totalThreads))
-        .sort((a: ServerScore, b: ServerScore) => b.score - a.score);
-}
-
-function getServerScore(ns: NS, hostname: string, totalThreads: number): ServerScore {
-    const maxMoney = ns.getServerMaxMoney(hostname);
-    const security = ns.getServerSecurityLevel(hostname);
-    const minSecurity = ns.getServerMinSecurityLevel(hostname);
-    const timeAdjustment = getHackingSkillFactor(ns, hostname, minSecurity) / getHackingSkillFactor(ns, hostname, security);
-
-    const growthAmount = 1 / (1 - HACK_MONEY_FRACTION);
-    const growThreads = Math.ceil(ns.growthAnalyze(hostname, growthAmount) * timeAdjustment);
-    const growCycles =  Math.ceil(growThreads / totalThreads);
-    const growSecIncrease = ns.growthAnalyzeSecurity(growThreads);
-
-    const hackMoneyAdjustment = security < 100 ? (100 - minSecurity) / (100 - security) : 1;
-    const hackThreads = Math.ceil(HACK_MONEY_FRACTION  * hackMoneyAdjustment / (ns.hackAnalyze(hostname)));
-    const hackCycles =  Math.ceil(hackThreads / totalThreads);
-    const hackSecIncrease = ns.hackAnalyzeSecurity(hackThreads);
-    const hackTime = ns.getHackTime(hostname) * timeAdjustment / 1000;
-
-    const weakenThreads = (growSecIncrease + hackSecIncrease) / WEAKEN_AMOUNT;
-    // We purposefully don't put a ceiling on the weakens, since we don't always do a weaken for every hack/grow cycle.
-    const weakenCycles = weakenThreads / totalThreads;
-
-    const cycleTime = (growCycles * GROW_TIME_MULTIPLIER + hackCycles + weakenCycles * WEAKEN_TIME_MULTIPLIER) * hackTime;
-    const moneyPerSec = Math.floor(maxMoney * HACK_MONEY_FRACTION / cycleTime);
-
-    const score = moneyPerSec;
-
-    return {
-        hostname: hostname,
-        score: score,
-        maxMoney: maxMoney,
-        security: security,
-        minSecurity: minSecurity,
-        growThreads: growThreads,
-        hackThreads: hackThreads,
-        cycleTime: cycleTime,
-        moneyPerSec: moneyPerSec
-    };
-}
-
-// Taken from https://github.com/danielyxie/bitburner/blob/dev/src/Hacking.ts
-function getHackingSkillFactor(ns: NS, hostname: string, hackDifficulty: number) {
-    const difficultyMult = ns.getServerRequiredHackingLevel(hostname) * hackDifficulty;
-    const baseDiff = 500;
-    const diffFactor = 2.5;
-    return diffFactor * difficultyMult + baseDiff;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function printScore(ns: NS, score: ServerScore): void {
-    ns.print(ns.sprintf(
-        '%s: Money: %s (%s/s), Sec: %d/%d, Thr: G:%d/H:%d, Cyc Time: %.1fs',
-        score.hostname,
-        ns.nFormat(score.maxMoney, '$0.00a'),
-        ns.nFormat(score.moneyPerSec, '$0.00a'),
-        score.security,
-        score.minSecurity,
-        score.growThreads,
-        score.hackThreads,
-        score.cycleTime
-    ));
-}
-
-function getFarmableHostnames(ns: NS, rootedHostnames: string[]): string[] {
-    return rootedHostnames.filter(hostname => getServerAvailableRam(ns, hostname) > 0);
-}
-
-function getAgents(ns: NS): string[] {
-    return ns.ls('home').filter(file => file.startsWith('/agent/'));
-}
-
-async function installAgents(ns: NS, farmableHostnames: string[]): Promise<void> {
-    const files = getAgents(ns);
-
-    for (const hostname of farmableHostnames) {
-        await ns.scp(files, 'home', hostname);
-    }
-}
-
-async function hackServer(
-    ns: NS,
-    targetHostname: string,
-    farmableHostnames: string[],
-    cycle: number,
-    lastAction: HackAction,
-    timings: HackTimings
-): Promise<HackAction> {
-    const maxMoney = ns.getServerMaxMoney(targetHostname);
-    const minSecLevel = ns.getServerMinSecurityLevel(targetHostname);
-    const action = getAction(ns, targetHostname, lastAction);
-    const runTime = Math.max(0.1, getRunTime(ns, targetHostname, action));
-    const maxThreads = getMaxThreads(ns, targetHostname, action);
-    const script = getScript(action);
-    let totalThreads = 0;
-
-    for (const hostname of farmableHostnames) {
-        getAgents(ns).forEach(script => ns.scriptKill(script, hostname));
-        const scriptRam = ns.getScriptRam(script, hostname);
-        const serverThreads = Math.floor(getServerAvailableRam(ns, hostname) / scriptRam);
-        const threads = Math.min(maxThreads - totalThreads, serverThreads);
-
-        if (threads > 0) {
-            if (ns.exec(script, hostname, threads, targetHostname)) {
-                totalThreads += threads;
-            } else {
-                ns.print(`Error running script ${script} on ${hostname} with ${threads} threads`);
-            }
-        }
-    }
-
-    timings[action] += runTime;
-    let totalTime = 0;
-
-    for (const anAction in timings) {
-        totalTime += timings[anAction];
-    }
-
-    if (totalTime > 0) {
-        const money = ns.getServerMoneyAvailable(targetHostname);
-        const secLevel = ns.getServerSecurityLevel(targetHostname);
-
-        ns.print(ns.sprintf(
-            '%3d %6s %3d x %5.1fs:'
-            + '  Times: %5.1fs (G%03d/W%03d/H%03d).'
-            + '  Money: %6s/%6s.'
-            + '  Sec: %3d/%3d.',
-            cycle,
-            action,
-            totalThreads,
-            runTime,
-            totalTime,
-            timings[HackAction.Grow] * 100 / totalTime,
-            timings[HackAction.Weaken] * 100 / totalTime,
-            timings[HackAction.Hack] * 100 / totalTime,
-            ns.nFormat(money, '$0.00a'),
-            ns.nFormat(maxMoney, '$0.00a'),
-            secLevel,
-            minSecLevel
-        ));
-    }
-
-    await ns.sleep(runTime * 1000 + 100);
-    return action;
-}
-
-function getAction(ns: NS, targetHostname: string, lastAction: HackAction): HackAction {
-    const securityLevel = ns.getServerSecurityLevel(targetHostname);
-    const hackFactor = Math.max(0, 100 - securityLevel);
-    const minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname);
-    const hackMaxFactor = Math.max(0, 100 - minSecurityLevel);
-    const maxMoney = ns.getServerMaxMoney(targetHostname);
-    const money = ns.getServerMoneyAvailable(targetHostname);
-
-    if (lastAction == HackAction.Weaken && hackFactor < hackMaxFactor * WEAKEN_UPPER_THRESHOLD) {
-        return HackAction.Weaken;
-    } else if (hackFactor < hackMaxFactor * WEAKEN_LOWER_THRESHOLD) {
-        return HackAction.Weaken;
-    } else if (lastAction == HackAction.Grow && money < maxMoney * GROW_UPPER_THRESHOLD) {
-        return HackAction.Grow;
-    } else if (money < maxMoney * GROW_LOWER_THRESHOLD) {
-        return HackAction.Grow;
-    } else {
-        return HackAction.Hack;
-    }
-}
-
-function getRunTime(ns: NS, targetHostname: string, action: HackAction): number {
-    switch (action) {
-        case HackAction.Grow:
-            return ns.getGrowTime(targetHostname) / 1000;
-
-        case HackAction.Weaken:
-            return ns.getWeakenTime(targetHostname) / 1000;
-
-        case HackAction.Hack:
-            return ns.getHackTime(targetHostname) / 1000;
-    }
-
-    return 0;
-}
-
-function getScript(action: HackAction): string {
-    switch (action) {
-        case HackAction.Grow:
-            return '/agent/grow.js';
-
-        case HackAction.Weaken:
-            return '/agent/weaken.js';
-
-        case HackAction.Hack:
-            return '/agent/hack.js'
-    }
-
-    return '';
-}
-
-function getMaxThreads(ns: NS, targetHostname: string, action: HackAction): number {
-    switch (action) {
-        case HackAction.Grow: {
-            const maxMoney = ns.getServerMaxMoney(targetHostname);
-            const moneyAvailable = ns.getServerMoneyAvailable(targetHostname);
-
-            if (moneyAvailable > 0) {
-                const growAmount = maxMoney / moneyAvailable;
-                return Math.ceil(ns.growthAnalyze(targetHostname, growAmount));
-            } else {
-                return 1000000000;
-            }
-        }
-
-        case HackAction.Weaken:
-            return 1000000000;
-
-        case HackAction.Hack: {
-            const hackAmount = Math.ceil(Math.max(0, ns.getServerMoneyAvailable(targetHostname)
-                - (1 - HACK_MONEY_FRACTION) * ns.getServerMaxMoney(targetHostname)));
-            return Math.ceil(ns.hackAnalyzeThreads(targetHostname, hackAmount));
-        }
-    }
-
-    return 0;
+        .map(hostname => new ServerHackScore(ns, hostname, totalThreads, HACK_MONEY_FRACTION))
+        .sort((a: ServerHackScore, b: ServerHackScore) => b.score - a.score);
 }
