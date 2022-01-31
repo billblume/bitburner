@@ -18,6 +18,7 @@ const HACKNET_MAX_HASH_CAPACITY_RATIO = 0.8;
 
 const MAX_WEAKEN_TIME = 5 * 60;
 const HACK_MONEY_FRACTION = 0.5;
+const MIN_HACK_THREADS_FRACTION = 0.1;
 
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
@@ -336,19 +337,34 @@ function getBestServers(ns: NS, hostnames: string[], availThreads: number): Serv
     const serverScores = getServerScores(ns, hostnames, availThreads);
     const bestServers: ServerThreads[] = [];
     const serverDescrs: string[] = [];
+    const minHackThreads = Math.floor(availThreads * MIN_HACK_THREADS_FRACTION);
+    let bestWeakenServer: string|null = null;
+    let bestWeakenScore = 0;
 
     for (const score of serverScores) {
         ns.print('INFO: Est: ' + score.toString(ns));
         const threads = Math.max(score.weakenThreads, score.initialWeakenThreads, score.hackThreads, score.growThreads);
 
-        if (bestServers.length == 0 || availThreads >= threads) {
+        if (bestServers.length == 0 || (availThreads >= threads && threads > minHackThreads)) {
             bestServers.push({
                hostname: score.hostname,
                threads: threads
             });
             serverDescrs.push(`${score.hostname}:${threads}`);
             availThreads -= threads;
+        } else if (bestWeakenScore < score.weakenScore) {
+            bestWeakenServer = score.hostname;
+            bestWeakenScore = score.weakenScore;
         }
+    }
+
+    if (availThreads > 0 && bestWeakenServer) {
+        // Put all remaining threads on server solely to weaken it to get its security down.
+        bestServers.push({
+            hostname: bestWeakenServer,
+            threads: availThreads
+        })
+        serverDescrs.push(`${bestWeakenServer}:${availThreads}`);
     }
 
     ns.print(`Selected servers ${serverDescrs.join(', ')} for hacking`);
@@ -358,7 +374,7 @@ function getBestServers(ns: NS, hostnames: string[], availThreads: number): Serv
 function getServerScores(ns: NS, hostnames: string[], totalThreads: number): ServerHackScore[] {
     return hostnames
         .filter(hostname => hostname != 'home')
-        .filter(hostname => ns.getServerMoneyAvailable(hostname) > 0)
+        .filter(hostname => ns.getServerMaxMoney(hostname) > 0)
         .filter(hostname => ns.getWeakenTime(hostname) / 1000 <= MAX_WEAKEN_TIME)
         .map(hostname => new ServerHackScore(ns, hostname, totalThreads, HACK_MONEY_FRACTION))
         .sort((a: ServerHackScore, b: ServerHackScore) => b.score - a.score);

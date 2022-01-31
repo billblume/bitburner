@@ -8,6 +8,7 @@ export class ServerHackScore {
 
     hostname: string;
     score: number;
+    weakenScore: number;
     maxMoney: number;
     security: number;
     minSecurity: number;
@@ -45,6 +46,7 @@ export class ServerHackScore {
         this.cycleTime = (growCycles * GROW_TIME_MULTIPLIER + hackCycles + weakenCycles * WEAKEN_TIME_MULTIPLIER) * hackTime;
         this.moneyPerSec = Math.floor(this.maxMoney * hackMoneyFraction / this.cycleTime);
         this.score = this.moneyPerSec;
+        this.weakenScore = this.maxMoney * (this.security - this.minSecurity) / (100 - this.minSecurity) / hackTime;
     }
 
     // Taken from https://github.com/danielyxie/bitburner/blob/dev/src/Hacking.ts
