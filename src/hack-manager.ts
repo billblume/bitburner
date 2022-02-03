@@ -93,13 +93,17 @@ function spendHacknetHashes(ns: NS, targetHostnames: ServerThreads[]): void {
             if (success) {
                 continue;
             }
-        } else if (workType.indexOf('gym') != -1) {
+        }
+
+        if (workType.indexOf('gym') != -1) {
             success = spendHashes(ns, 'Improve Gym Training');
 
             if (success) {
                 continue;
             }
-        } else if (workType.indexOf('bladeburner') != -1) {
+        }
+
+        if (player.factions.includes('Bladeburners')) {
             success = spendHashes(ns, 'Exchange for Bladeburner Rank');
 
             if (success) {
@@ -215,7 +219,7 @@ function buyPrivateServers(ns: NS, budget: number): void {
             return;
         }
 
-        ns.print(`Purchasing ${hostname} with ${ram}GB RAM for $${ns.nFormat(cost, '$0.00a')}.`)
+        ns.print(`Purchasing ${hostname} with ${ram}GB RAM for ${ns.nFormat(cost, '$0.00a')}.`)
         ns.purchaseServer(hostname, ram);
     }
 }
