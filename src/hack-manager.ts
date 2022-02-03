@@ -7,7 +7,7 @@ import { ServerHackScheduler, ServerThreads } from '/lib/ServerHackScheduler';
 const SERVER_BUY_AND_CRACK_SECS = 5 * 60;
 const SERVER_BUDGET_RATIO_LOW = 0.5;
 const SERVER_BUDGET_RATIO_LOW_CUTOFF = 1e6;
-const SERVER_BUDGET_RATIO_HIGH = 0.01;
+const SERVER_BUDGET_RATIO_HIGH = 0.05;
 const HACKNET_NODE_WEIGHT = 1;
 const HACKNET_LEVEL_WEIGHT = 1;
 const HACKNET_RAM_WEIGHT = 1;
