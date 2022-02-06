@@ -1,7 +1,7 @@
 import { NS } from '@ns';
 
 export async function main(ns: NS): Promise<void> {
-    ns.kill('stock-trader.ns', 'home');
+    ns.kill('stock-trader.js', 'home');
     const symbols = ns.stock.getSymbols();
 
     symbols.forEach(sym => {
