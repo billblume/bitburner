@@ -4,7 +4,7 @@ This repository contains a collection of scripts I wrote for the incremental gam
 
 ## Installation
 
-This repository is based off the [Bitburner VSCode Template](https://github.com/bitburner-official/bitburner-vscode).  The VS-Code template allows one to write typescript scripts that are compiled into javascript scripts usable by Bitburner.  Go to the link for instructions on how to configure VS-Code to compile and install these scripts into the Bitburner game.
+This repository is based off the [Bitburner VSCode Template](https://github.com/bitburner-official/vscode-template).  The VS-Code template allows one to write typescript scripts that are compiled into javascript scripts usable by Bitburner.  Go to the link for instructions on how to configure VS-Code to compile and install these scripts into the Bitburner game.
 
 ## Scripts
 
