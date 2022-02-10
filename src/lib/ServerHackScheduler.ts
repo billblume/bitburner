@@ -279,7 +279,10 @@ export class ServerHackScheduler {
                     threads: serverThreads
                 });
             } else {
-                this.ns.print(`Error running script ${script} on ${serverInfo.hostname} with ${serverThreads} threads`);
+                const usedRam = this.ns.getServerUsedRam(targetHostname);
+                const maxRam = this.ns.getServerMaxRam(targetHostname);
+                this.ns.print(`Error running script '${script} ${targetHostname}' on ${serverInfo.hostname} with ${serverThreads} threads.` +
+                    `  (Used ${usedRam}GB, Max ${maxRam}GB)`);
             }
         }
 
