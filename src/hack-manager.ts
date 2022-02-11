@@ -18,7 +18,7 @@ const HACKNET_MAX_HASH_CAPACITY_RATIO = 0.8;
 
 const MAX_WEAKEN_TIME = 5 * 60;
 const HACK_MONEY_FRACTION = 0.5;
-const MIN_SCORE_FRACTION = 0.01;
+const MIN_HACK_THREADS_FRACTION = 0.1;
 
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
@@ -343,17 +343,16 @@ function getBestServers(ns: NS, hostnames: string[], availThreads: number): Serv
     const serverDescrs: string[] = [];
     let bestWeakenServer: string|null = null;
     let bestWeakenScore = 0;
-    let bestScore = 0;
+    const minHackThreads = availThreads * MIN_HACK_THREADS_FRACTION;
 
     for (const score of serverScores) {
         ns.print('INFO: Est: ' + score.toString(ns));
-        const threads = Math.max(score.weakenThreads, score.initialWeakenThreads, score.hackThreads, score.growThreads);
+        const threads = Math.min(
+            availThreads,
+            Math.max(score.weakenThreads, score.initialWeakenThreads, score.hackThreads, score.growThreads)
+        );
 
-        if (bestServers.length == 0 || (availThreads >= threads && score.score >= bestScore * MIN_SCORE_FRACTION)) {
-            if (bestServers.length == 0) {
-                bestScore = score.score;
-            }
-
+        if (availThreads >= minHackThreads) {
             bestServers.push({
                hostname: score.hostname,
                threads: threads
