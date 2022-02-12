@@ -35,7 +35,7 @@ export async function main(ns : NS) : Promise<void> {
         if (now >= lastBuyAndHackTime + SERVER_BUY_AND_CRACK_SECS) {
             scheduler.printStats();
             sellExcessHacknetHashes(ns);
-            const rootedHostnames = buyAndCrackServers(ns);
+            const rootedHostnames = await buyAndCrackServers(ns);
             await scheduler.updateServerInfo();
             targetHostnames = getBestServers(ns, rootedHostnames, scheduler.getTotalThreads());
             scheduler.setServersToHack(targetHostnames);
@@ -161,10 +161,10 @@ function spendHashes(ns: NS, upgName: string, upgTarget?: string|undefined): boo
     return success;
 }
 
-function buyAndCrackServers(ns: NS): string[] {
+async function buyAndCrackServers(ns: NS): Promise<string[]> {
     const budget = getServerBudget(ns);
     ns.print(`INFO: Server budget: ` + ns.nFormat(budget, '$0.00a'));
-    buyPrivateServers(ns, budget);
+    await buyPrivateServers(ns, budget);
     buyHacknetServers(ns, budget);
     const allHostnames = getAllServerHostnames(ns);
     crackServers(ns, allHostnames);
@@ -186,7 +186,7 @@ function getServerBudget(ns: NS): number {
     return budget;
 }
 
-function buyPrivateServers(ns: NS, budget: number): void {
+async function buyPrivateServers(ns: NS, budget: number): Promise<void> {
     const numServers = ns.getPurchasedServerLimit();
     const perServerBudget = budget / numServers;
     let ram = 8;
@@ -202,6 +202,10 @@ function buyPrivateServers(ns: NS, budget: number): void {
     const cost = ns.getPurchasedServerCost(ram);
 
     for (let i = 0; i < numServers; ++i) {
+        if (ns.getServerMoneyAvailable("home") < cost) {
+            break;
+        }
+
         const hostname = 'pserv-' + String(i);
 
         if (ns.serverExists(hostname)) {
@@ -211,16 +215,12 @@ function buyPrivateServers(ns: NS, budget: number): void {
 
             ns.killall(hostname);
             ns.deleteServer(hostname);
-        }
-
-
-        if (ns.getServerMoneyAvailable("home") < cost) {
-            // ns.print('Not enough money to buy more servers.');
-            return;
+            await ns.sleep(10);
         }
 
         ns.print(`Purchasing ${hostname} with ${ram}GB RAM for ${ns.nFormat(cost, '$0.00a')}.`)
         ns.purchaseServer(hostname, ram);
+        await ns.sleep(10);
     }
 }
 
