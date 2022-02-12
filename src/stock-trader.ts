@@ -1,243 +1,120 @@
 import { NS } from '@ns';
+import { Stock, PRICE_HISTORY_LEN } from '/lib/Stock';
 
 const TICK_TIME = 6000;
-const PRICE_HISTORY_LEN = 11;
+const WAIT_CYCLES_BEFORE_SELL = 10;
+const REPORT_FREQUENCY = 50;
 const BUDGET_RATIO = 0.5;
-const HISTORY_BUY_RATIO = 0.8;
-const HISTORY_SELL_RATIO = 0.6;
-const FORECAST_BUY_RATIO = 0.6;
-const FORECAST_SELL_RATIO = 0.5;
-const COMMISSION_FEE = 100000;
-const MIN_STOCK_BUDGET = COMMISSION_FEE * 50;
 
-export async function main(ns: NS): Promise<void> {
-    const trader = new StockTrader(ns);
-    await trader.run();
+export async function main(ns : NS) : Promise<void> {
+    ns.disableLog('ALL');
+    ns.enableLog('print');
+    const has4S = ns.stock.purchase4SMarketData()
+        && ns.stock.purchase4SMarketDataTixApi();
+    const symbols = ns.stock.getSymbols();
+    const stocks = symbols.map(sym => new Stock(ns, sym, has4S));
+
+    if (! has4S) {
+        ns.print('INFO Populating price history');
+
+        for (let i = 0; i < PRICE_HISTORY_LEN; ++i) {
+            stocks.forEach(stock => stock.updatePriceHistory());
+            await ns.sleep(TICK_TIME);
+        }
+    }
+
+    let cycles = 0;
+
+    while (true) {
+        stocks.forEach(stock => stock.update());
+        stocks.sort((a, b) => b.estProfit - a.estProfit);
+
+        sellFlippedPositions(ns, stocks);
+        sellUnderperformers(ns, stocks);
+        buyStocks(ns, stocks);
+
+        if (cycles % REPORT_FREQUENCY == 0) {
+            printReport(ns, stocks);
+        }
+
+        await ns.sleep(TICK_TIME);
+        ++cycles;
+    }
 }
 
-class StockTrader {
-    ns: NS;
-    symbols: string[];
-    priceHistory: Record<string, number[]>;
-    has4SMarketData: boolean;
-    totalCosts: number;
-    totalSales: number;
+function sellFlippedPositions(ns: NS, stocks: Stock[]) {
+    stocks.filter(stock => stock.position != stock.newPosition)
+        .filter(stock => stock.cyclesSinceLastBuy >= WAIT_CYCLES_BEFORE_SELL)
+        .forEach(stock => stock.sellAll('Flipped'));
+}
 
-    constructor(ns: NS) {
-        this.ns = ns;
-        ns.disableLog('ALL');
-        ns.enableLog('print');
-        this.symbols = ns.stock.getSymbols();
-        this.priceHistory = {};
-        this.totalCosts = 0;
-        this.totalSales = 0;
+function sellUnderperformers(ns: NS, stocks: Stock[]): void {
+    let totalWorth = 0;
+    let totalWorthUnsellable = 0;
 
-        for (const sym of this.symbols) {
-            this.priceHistory[sym] = [];
-        }
+    for (const stock of stocks) {
+        const sales = stock.salesSellAll();
+        totalWorth += sales;
 
-        this.has4SMarketData = ns.stock.purchase4SMarketData()
-            && ns.stock.purchase4SMarketDataTixApi();
-    }
-
-    async run(): Promise<void> {
-        if (!this.has4SMarketData) {
-            this.ns.print('INFO Populating price history');
-
-            for (let i = 0; i < PRICE_HISTORY_LEN; ++i) {
-                this.updatePriceHistory();
-                await this.ns.sleep(TICK_TIME);
-            }
-        }
-
-        while (true) {
-            if (!this.has4SMarketData) {
-                this.updatePriceHistory();
-            }
-
-            this.sellStocks();
-            this.buyStocks();
-            await this.ns.sleep(TICK_TIME);
+        if (! stock.canSellAllProfitably()) {
+            totalWorthUnsellable += sales;
         }
     }
 
-    updatePriceHistory(): void {
-        for (const sym of this.symbols) {
-            const price = this.ns.stock.getPrice(sym);
+    const totalMoney = ns.getServerMoneyAvailable('home') + totalWorth;
+    let budget = Math.max(0, Math.floor(totalMoney * BUDGET_RATIO - totalWorthUnsellable));
 
-            if (this.priceHistory[sym].length > PRICE_HISTORY_LEN) {
-                this.priceHistory[sym].shift();
-            }
-
-            this.priceHistory[sym].push(price);
-        }
-    }
-
-    readPositions(): Record<string,[number, number, number, number]> {
-        const positions: Record<string,[number, number, number, number]> = {};
-
-        for (const sym of this.symbols) {
-            positions[sym] = this.ns.stock.getPosition(sym);
+    for (const stock of stocks) {
+        if (stock.shares == 0) {
+            continue;
         }
 
-        return positions;
-    }
-
-    sellStocks(): void {
-        const positions = this.readPositions();
-        let soldStock = false;
-
-        for (const sym in positions) {
-            const position = positions[sym];
-            const shares = position[0];
-
-            if (shares > 0) {
-                const action = this.getStockAction(sym);
-
-                if (action == 'sell') {
-                    const price = this.ns.stock.getSaleGain(sym, shares, 'Long');
-                    const avgPx = position[1];
-                    const cost = shares * avgPx;
-                    const profit = price - cost;
-                    this.ns.print(this.ns.sprintf(
-                        'Selling %d shares of %s for %s, (Profit: %s %.02f%%)',
-                        shares,
-                        sym,
-                        this.ns.nFormat(price, '$0.000a'),
-                        this.ns.nFormat(profit, '$0.000a'),
-                        price > 0 ? 100 * profit / price : 0
-                    ));
-                    this.ns.stock.sell(sym, shares);
-                    this.totalCosts += cost;
-                    this.totalSales += price;
-                    soldStock = true;
-                }
-            }
-        }
-
-        if (soldStock) {
-            const totalProfits = this.totalSales - this.totalCosts;
-            this.ns.print(this.ns.sprintf(
-                'Total sales %s, profits %s %.03f%%',
-                this.ns.nFormat(this.totalSales, '$0.000a'),
-                this.ns.nFormat(totalProfits, '$0.000a'),
-                this.totalSales > 0 ? 100 * totalProfits / this.totalSales : 0
-            ));
-
-        }
-    }
-
-    buyStocks(): void {
-        const positions = this.readPositions();
-        const budget = this.computeBudget(positions);
-
-        if (budget <= 0) {
-            return;
-        }
-
-        const buySyms = this.symbols
-            .filter(sym => this.ns.stock.getMaxShares(sym) > positions[sym][0])
-            .filter(sym => this.getStockAction(sym) == 'buy');
-
-        if (buySyms.length == 0) {
-            return;
-        }
-
-        const stockBudget = budget / buySyms.length;
-
-        if (stockBudget < MIN_STOCK_BUDGET) {
-            return;
-        }
-
-        for (const sym of buySyms) {
-            const position = positions[sym];
-            const remainingShares = this.ns.stock.getMaxShares(sym) - position[0];
-            const price = this.ns.stock.getPrice(sym);
-            const shares = Math.min(Math.floor(stockBudget / price), remainingShares);
-
-            if (shares > 0) {
-                const cost = this.ns.stock.getPurchaseCost(sym, shares, 'Long');
-                this.ns.print(this.ns.sprintf(
-                    'Buying %d shares of %s for %s',
-                    shares,
-                    sym,
-                    this.ns.nFormat(cost, '$0.000a'),
-                ));
-                this.ns.stock.buy(sym, shares);
-            }
-        }
-    }
-
-    computeBudget(positions: Record<string,[number, number, number, number]>): number {
-        const avail = this.ns.getServerMoneyAvailable('home');
-        let cost = 0;
-        let gains = 0;
-
-        for (const sym in positions) {
-            const position = positions[sym];
-            const shares = position[0];
-            const avgPx = position[1];
-            cost += shares * avgPx;
-            gains += (this.ns.stock.getBidPrice(sym) - avgPx) * shares;
-        }
-
-        let budget = (avail + cost) * BUDGET_RATIO;
-        budget = Math.max(budget - cost, 0);
-        this.ns.print(this.ns.sprintf(
-            'INFO budget %s (Avail: %s, Cost: %s, Gains: %s %.02f%%)',
-            this.ns.nFormat(budget, '$0.000a'),
-            this.ns.nFormat(avail, '$0.000a'),
-            this.ns.nFormat(cost, '$0.000a'),
-            this.ns.nFormat(gains, '$0.000a'),
-            cost > 0 ? 100 * gains / cost : 0
-        ));
-        return budget;
-    }
-
-    getStockAction(sym: string): string {
-        if (this.has4SMarketData) {
-            return this.get4SStockAction(sym);
+        if (budget > 0) {
+            budget -= stock.costBuyAll();
         } else {
-            return this.getPriceHistoryStockAction(sym);
-        }
-    }
-
-    getPriceHistoryStockAction(sym: string): string {
-        let numPriceIncreases = 0;
-        let numPriceDecreases = 0;
-
-        for (let i = 1; i < PRICE_HISTORY_LEN; ++i) {
-            const currPrice = this.priceHistory[sym][i];
-            const prevPrice = this.priceHistory[sym][i - 1];
-
-            if (currPrice > prevPrice) {
-                ++numPriceIncreases;
-            } else if (currPrice < prevPrice) {
-                ++numPriceDecreases;
+            if (stock.canSellAllProfitably()) {
+                stock.sellAll('Underperforming');
             }
         }
+    }
+}
 
-        let action = 'hold';
+function buyStocks(ns: NS, stocks: Stock[]): void {
+    let totalWorth = 0;
 
-        if (numPriceIncreases >= (PRICE_HISTORY_LEN - 1) * HISTORY_BUY_RATIO) {
-            action = 'buy';
-        } else if (numPriceDecreases >= (PRICE_HISTORY_LEN - 1) * HISTORY_SELL_RATIO) {
-            action = 'sell';
-        }
-
-        return action;
+    for (const stock of stocks) {
+        totalWorth += stock.salesSellAll();
     }
 
-    get4SStockAction(sym: string): string {
-        const forecast = this.ns.stock.getForecast(sym);
-        let action = 'hold';
+    const totalMoney = ns.getServerMoneyAvailable('home') + totalWorth;
+    let budget = Math.max(0, Math.floor((totalMoney * BUDGET_RATIO) - totalWorth));
+    const remainingBudget = budget;
 
-        if (forecast >= FORECAST_BUY_RATIO) {
-            action = 'buy';
-        } else if (forecast <= FORECAST_SELL_RATIO) {
-            action = 'sell';
+    for (const stock of stocks) {
+        if (remainingBudget > 0) {
+            budget -= stock.buy(budget);
         }
-
-        return action;
     }
+}
+
+function printReport(ns: NS, stocks: Stock[]): void {
+    let totalSales = 0;
+    let totalCost = 0;
+
+    for (const stock of stocks) {
+        stock.report();
+        totalSales += stock.totalSales;
+        totalCost += stock.totalCost;
+    }
+
+    const totalProfit = totalSales - totalCost;
+    const percentProfit = totalCost > 0 ? totalProfit / totalCost : 0;
+
+    ns.print(ns.sprintf(
+        'INFO Totals: Sales: %s, Costs: %s, Profit: %s %.02f%%',
+        ns.nFormat(totalSales, '$0.000a'),
+        ns.nFormat(totalCost, '$0.000a'),
+        ns.nFormat(totalProfit, '$0.000a'),
+        percentProfit
+    ));
 }
