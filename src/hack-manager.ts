@@ -125,10 +125,12 @@ function spendHacknetHashes(ns: NS, targetHostnames: ServerThreads[]): void {
             }
         }
 
-        success = spendHashes(ns, 'Reduce Minimum Security', targetHostnames[0].hostname);
+        if (ns.getServerMinSecurityLevel(targetHostnames[0].hostname) > 1) {
+            success = spendHashes(ns, 'Reduce Minimum Security', targetHostnames[0].hostname);
 
-        if (success) {
-            continue;
+            if (success) {
+                continue;
+            }
         }
 
         success = spendHashes(ns, 'Increase Maximum Money', targetHostnames[0].hostname);
