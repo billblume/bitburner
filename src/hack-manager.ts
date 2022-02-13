@@ -125,8 +125,10 @@ function spendHacknetHashes(ns: NS, targetHostnames: ServerThreads[]): void {
             }
         }
 
-        if (ns.getServerMinSecurityLevel(targetHostnames[0].hostname) > 1) {
-            success = spendHashes(ns, 'Reduce Minimum Security', targetHostnames[0].hostname);
+        const nonMinSecTargets = targetHostnames.filter(target => ns.getServerMinSecurityLevel(target.hostname) > 1);
+
+        if (nonMinSecTargets.length > 0) {
+            success = spendHashes(ns, 'Reduce Minimum Security', nonMinSecTargets[0].hostname);
 
             if (success) {
                 continue;
