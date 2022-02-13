@@ -1,9 +1,10 @@
 import { NS } from '@ns';
-import { Stock, PRICE_HISTORY_LEN } from '/lib/Stock';
+import { Stock } from '/lib/Stock';
 
 const TICK_TIME = 6000;
 const WAIT_CYCLES_BEFORE_SELL = 10;
-const REPORT_FREQUENCY = 50;
+const WARM_UP_CYCLES = 10;
+const REPORT_FREQUENCY = 75;
 const BUDGET_RATIO = 0.5;
 
 export async function main(ns : NS) : Promise<void> {
@@ -17,7 +18,7 @@ export async function main(ns : NS) : Promise<void> {
     if (! has4S) {
         ns.print('INFO Populating price history');
 
-        for (let i = 0; i < PRICE_HISTORY_LEN; ++i) {
+        for (let i = 0; i < WARM_UP_CYCLES; ++i) {
             stocks.forEach(stock => stock.updatePriceHistory());
             await ns.sleep(TICK_TIME);
         }
@@ -28,6 +29,7 @@ export async function main(ns : NS) : Promise<void> {
     while (true) {
         stocks.forEach(stock => stock.update());
         stocks.sort((a, b) => b.estProfit - a.estProfit);
+        // stocks.forEach(stock => stock.printForecast());
 
         sellFlippedPositions(ns, stocks);
         sellUnderperformers(ns, stocks);
@@ -98,22 +100,26 @@ function buyStocks(ns: NS, stocks: Stock[]): void {
 }
 
 function printReport(ns: NS, stocks: Stock[]): void {
+    for (const stock of stocks) {
+        stock.reportPosition();
+    }
+
     let totalSales = 0;
     let totalCost = 0;
 
     for (const stock of stocks) {
-        stock.report();
+        stock.reportSales();
         totalSales += stock.totalSales;
         totalCost += stock.totalCost;
     }
 
     const totalProfit = totalSales - totalCost;
-    const percentProfit = totalCost > 0 ? totalProfit / totalCost : 0;
+    const percentProfit = totalCost > 0 ? 100 * totalProfit / totalCost : 0;
 
     ns.print(ns.sprintf(
-        'INFO Totals: Sales: %s, Costs: %s, Profit: %s %.02f%%',
-        ns.nFormat(totalSales, '$0.000a'),
+        'INFO Total Sales: Costs: %s, Sales: %s, Profit: %s %.02f%%',
         ns.nFormat(totalCost, '$0.000a'),
+        ns.nFormat(totalSales, '$0.000a'),
         ns.nFormat(totalProfit, '$0.000a'),
         percentProfit
     ));

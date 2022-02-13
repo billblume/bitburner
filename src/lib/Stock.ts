@@ -1,7 +1,8 @@
 import { NS } from '@ns'
 
-export const PRICE_HISTORY_LEN = 40;
+const PRICE_HISTORY_LEN = 40;
 const COMMISSION_FEE = 100000;
+const MIN_BUY_AMOUNT = COMMISSION_FEE * 100;
 
 export class Stock {
     ns: NS;
@@ -100,33 +101,50 @@ export class Stock {
 
         this.newPosition = (this.forecast >= 0.5 ? 'Long' : 'Short');
 
+        /*
         if (this.newPosition == 'Short') {
             this.newPosition = 'None';
         }
+        */
 
-        this.estProfit = (this.forecast - 0.5) * this.volatility;
+        this.estProfit = Math.abs(this.forecast - 0.5) * this.volatility;
+    }
+
+    printForecast(): void {
+        this.ns.print(this.ns.sprintf('INFO: %s Forecast: %.2f%%, Volatility: %.2f%%, Position: %s, Score: %.2f',
+            this.sym,
+            100 * this.forecast,
+            100 * this.volatility,
+            this.newPosition,
+            100 * 100 * this.estProfit
+        ));
     }
 
     buy(budget: number): number {
-        const remainingShares = this.ns.stock.getMaxShares(this.sym) - this.shares;
-        const estPrice = this.ns.stock.getPrice(this.sym);
-        const shares = Math.min(Math.floor(budget / estPrice), remainingShares);
-
-        if (shares == 0) {
+        if (this.newPosition == 'None') {
             return 0;
         }
 
-        let price;
+        const remainingShares = this.ns.stock.getMaxShares(this.sym) - this.shares;
+        const estPrice = this.ns.stock.getPrice(this.sym);
+        const shares = Math.min(Math.max(0, Math.floor(budget / estPrice)), remainingShares);
 
-        if (this.newPosition === 'Long') {
-            price = this.ns.stock.buy(this.sym, shares);
-        } else if (this.newPosition === 'Short') {
-            price = this.ns.stock.short(this.sym, shares);
-        } else {
-           return 0;
+        if (shares <= 0) {
+            return 0;
         }
 
-        const cost = shares * price + COMMISSION_FEE;
+        if (shares * estPrice < MIN_BUY_AMOUNT) {
+            return 0;
+        }
+
+        const cost = this.ns.stock.getPurchaseCost(this.sym, shares, this.newPosition);
+
+        if (this.newPosition === 'Long') {
+            this.ns.stock.buy(this.sym, shares);
+        } else if (this.newPosition === 'Short') {
+            this.ns.stock.short(this.sym, shares);
+        }
+
         this.ns.print(this.ns.sprintf(
             'Buying %s %s shares of %s for %s',
             this.newPosition,
@@ -136,23 +154,25 @@ export class Stock {
         ));
 
         this.updatePosition();
+        const price = this.ns.stock.getPrice(this.sym);
         this.setLastPriceHistoryItem(price);
         this.cyclesSinceLastBuy = 0;
         return cost;
     }
 
     sellAll(reason: string): number {
-        let price;
-
-        if (this.position === 'Long') {
-            price = this.ns.stock.sell(this.sym, this.shares);
-        } else if (this.position === 'Short') {
-            price = this.ns.stock.sellShort(this.sym, this.shares);
-        } else {
+        if (this.shares === 0 || this.position == 'None') {
             return 0;
         }
 
-        const sales = this.shares * price;
+        const sales = this.ns.stock.getSaleGain(this.sym, this.shares, this.position);
+
+        if (this.position === 'Long') {
+            this.ns.stock.sell(this.sym, this.shares);
+        } else if (this.position === 'Short') {
+            this.ns.stock.sellShort(this.sym, this.shares);
+        }
+
         const cost = this.shares * this.buyPrice + COMMISSION_FEE;
         const profit = sales - cost;
         this.ns.print(this.ns.sprintf(
@@ -171,6 +191,7 @@ export class Stock {
         this.position = 'None';
         this.shares = 0;
         this.buyPrice = 0;
+        const price = this.ns.stock.getPrice(this.sym);
         this.setLastPriceHistoryItem(price);
         return sales;
     }
@@ -205,19 +226,33 @@ export class Stock {
         return profit > 0;
     }
 
-    report(): void {
-        if (this.totalCost <= 0 && this.shares <= 0) {
+    reportPosition(): void {
+        if (this.shares <= 0) {
+            return;
+        }
+
+        const price = this.ns.stock.getPrice(this.sym);
+        this.ns.print(this.ns.sprintf(
+            'INFO Position %s: %s %s shares, buy price: %s, current price: %s',
+            this.sym,
+            this.position,
+            this.ns.nFormat(this.shares, '0.000a'),
+            this.ns.nFormat(this.buyPrice, '$0.000a'),
+            this.ns.nFormat(price, '$0.000a')
+        ));
+    }
+
+    reportSales(): void {
+        if (this.totalCost <= 0) {
             return;
         }
 
         const totalProfit = this.totalSales - this.totalCost
         const percentProfit = this.totalCost > 0 ? 100 * totalProfit / this.totalCost : 0;
         this.ns.print(this.ns.sprintf(
-            'INFO %s %s shares of %s at %s, Sold %s for profit %s %.02f%%',
-            this.position,
-            this.ns.nFormat(this.shares, '0.000a'),
+            'INFO Sales %s: Costs: %s, Sales: %s, Profit %s %.02f%%',
             this.sym,
-            this.ns.nFormat(this.shares * this.buyPrice, '$0.000a'),
+            this.ns.nFormat(this.totalCost, '$0.000a'),
             this.ns.nFormat(this.totalSales, '$0.000a'),
             this.ns.nFormat(totalProfit, '$0.000a'),
             percentProfit
