@@ -2,8 +2,8 @@ import { NS } from '@ns';
 import { Stock } from '/lib/Stock';
 
 const TICK_TIME = 6000;
-const WAIT_CYCLES_BEFORE_SELL = 10;
-const WARM_UP_CYCLES = 10;
+const WAIT_TICKS_BEFORE_SELL = 10;
+const WARM_UP_TICKS = 40;
 const REPORT_FREQUENCY = 75;
 const BUDGET_RATIO = 0.5;
 
@@ -18,13 +18,13 @@ export async function main(ns : NS) : Promise<void> {
     if (! has4S) {
         ns.print('INFO Populating price history');
 
-        for (let i = 0; i < WARM_UP_CYCLES; ++i) {
+        for (let i = 0; i < WARM_UP_TICKS; ++i) {
             stocks.forEach(stock => stock.updatePriceHistory());
             await ns.sleep(TICK_TIME);
         }
     }
 
-    let cycles = 0;
+    let tick = 0;
 
     while (true) {
         stocks.forEach(stock => stock.update());
@@ -35,18 +35,18 @@ export async function main(ns : NS) : Promise<void> {
         sellUnderperformers(ns, stocks);
         buyStocks(ns, stocks);
 
-        if (cycles % REPORT_FREQUENCY == 0) {
+        if (tick % REPORT_FREQUENCY == 0) {
             printReport(ns, stocks);
         }
 
         await ns.sleep(TICK_TIME);
-        ++cycles;
+        ++tick;
     }
 }
 
 function sellFlippedPositions(ns: NS, stocks: Stock[]) {
-    stocks.filter(stock => stock.position != stock.newPosition)
-        .filter(stock => stock.cyclesSinceLastBuy >= WAIT_CYCLES_BEFORE_SELL)
+    stocks.filter(stock => stock.buyPositionType != 'Hold' && stock.positionType != stock.buyPositionType)
+        .filter(stock => stock.ticksSinceLastBuy >= WAIT_TICKS_BEFORE_SELL)
         .forEach(stock => stock.sellAll('Flipped'));
 }
 
