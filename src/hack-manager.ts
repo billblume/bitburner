@@ -228,8 +228,12 @@ async function buyPrivateServers(ns: NS, budget: number): Promise<void> {
     }
 }
 
+let moneySpentOnHacknetServers = 0;
+
 function buyHacknetServers(ns: NS, budget: number): void {
-     while (budget > 0) {
+    budget -= moneySpentOnHacknetServers;
+
+    while (budget > 0) {
         const cost = buyCheapestHacknetUpgrade(ns, budget);
 
         if (cost <= 0) {
@@ -237,6 +241,7 @@ function buyHacknetServers(ns: NS, budget: number): void {
         }
 
         budget -= cost;
+        moneySpentOnHacknetServers += cost;
     }
 }
 
