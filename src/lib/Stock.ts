@@ -7,7 +7,7 @@ const MIN_BUY_AMOUNT = COMMISSION_FEE * 100;
 export class Stock {
     ns: NS;
     sym: string;
-    has4S: boolean;
+    has4SData: boolean;
     priceHistory: number[];
     positionType: string;
     shares: number;
@@ -20,10 +20,10 @@ export class Stock {
     totalSales: number;
     ticksSinceLastBuy: number;
 
-    constructor(ns: NS, sym: string, has4S: boolean) {
+    constructor(ns: NS, sym: string, has4SData: boolean) {
         this.ns = ns;
         this.sym = sym;
-        this.has4S = has4S;
+        this.has4SData = has4SData;
         this.priceHistory = [];
         this.positionType = 'None';
         this.shares = 0;
@@ -79,7 +79,7 @@ export class Stock {
     updateForecast(): void {
         let errorMargin = 0;
 
-        if (this.has4S) {
+        if (this.has4SData) {
             this.forecast = this.ns.stock.getForecast(this.sym);
             this.volatility = this.ns.stock.getVolatility(this.sym);
         } else {

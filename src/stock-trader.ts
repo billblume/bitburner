@@ -10,12 +10,12 @@ const BUDGET_RATIO = 0.5;
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
     ns.enableLog('print');
-    const has4S = ns.stock.purchase4SMarketData()
-        && ns.stock.purchase4SMarketDataTixApi();
+    const player = ns.getPlayer();
+    const has4SData = player.has4SData;
     const symbols = ns.stock.getSymbols();
-    const stocks = symbols.map(sym => new Stock(ns, sym, has4S));
+    const stocks = symbols.map(sym => new Stock(ns, sym, has4SData));
 
-    if (! has4S) {
+    if (! has4SData) {
         ns.print('INFO Populating price history');
 
         for (let i = 0; i < WARM_UP_TICKS; ++i) {
