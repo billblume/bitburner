@@ -110,9 +110,9 @@ export class Stock {
             this.buyPositionType = 'Short';
         }
 
-        /*
-        if (this.action == 'Short') {
-            this.action = 'None';
+        /* Uncomment if you don't have BN8.2 unlocked yet
+        if (this.buyPositionType == 'Short') {
+            this.buyPositionType = 'Hold';
         }
         */
 
@@ -214,7 +214,7 @@ export class Stock {
     costBuyAll(): number {
         const remainingShares = this.ns.stock.getMaxShares(this.sym) - this.shares;
 
-        if (remainingShares <= 0 || this.buyPositionType == 'None') {
+        if (remainingShares <= 0 || this.buyPositionType == 'Hold') {
             return 0;
         }
 
