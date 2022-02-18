@@ -108,7 +108,7 @@ function printReport(ns: NS, stocks: Stock[]): void {
     let totalCost = 0;
 
     for (const stock of stocks) {
-        stock.reportSales();
+        // stock.reportSales();
         totalSales += stock.totalSales;
         totalCost += stock.totalCost;
     }
