@@ -62,19 +62,17 @@ function sellUnderperformers(ns: NS, stocks: Stock[]): void {
     }
 
     const totalMoney = ns.getServerMoneyAvailable('home') + totalWorth;
-    let budget = Math.max(0, Math.floor(totalMoney * BUDGET_RATIO - totalWorthUnsellable));
+    let budget = Math.max(0, Math.floor((totalMoney * BUDGET_RATIO) - totalWorthUnsellable));
 
     for (const stock of stocks) {
-        if (stock.shares == 0) {
+        if (stock.shares == 0 || ! stock.canSellAllProfitably()) {
             continue;
         }
 
         if (budget > 0) {
-            budget -= stock.costBuyAll();
+            budget -= stock.costBuyAll() + stock.salesSellAll();
         } else {
-            if (stock.canSellAllProfitably()) {
-                stock.sellAll('Underperforming');
-            }
+            stock.sellAll('Underperforming');
         }
     }
 }
