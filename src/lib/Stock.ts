@@ -77,11 +77,12 @@ export class Stock {
     }
 
     updateForecast(): void {
-        let errorMargin = 0;
+        let errorMargin;
 
         if (this.has4SData) {
             this.forecast = this.ns.stock.getForecast(this.sym);
             this.volatility = this.ns.stock.getVolatility(this.sym);
+            errorMargin = 0.01;
         } else {
             this.volatility = 0;
             let numPriceIncreases = 0;
