@@ -46,7 +46,7 @@ export async function main(ns : NS) : Promise<void> {
 
 function sellFlippedPositions(ns: NS, stocks: Stock[]) {
     stocks.filter(stock => stock.buyPositionType != 'Hold' && stock.positionType != stock.buyPositionType)
-        .filter(stock => stock.ticksSinceLastBuy >= WAIT_TICKS_BEFORE_SELL)
+        // .filter(stock => stock.ticksSinceLastBuy >= WAIT_TICKS_BEFORE_SELL)
         .forEach(stock => stock.sellAll('Flipped'));
 }
 
