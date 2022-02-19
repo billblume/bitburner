@@ -2,7 +2,6 @@ import { NS } from '@ns';
 import { Stock } from '/lib/Stock';
 
 const TICK_TIME = 6000;
-const WAIT_TICKS_BEFORE_SELL = 10;
 const WARM_UP_TICKS = 40;
 const REPORT_FREQUENCY = 75;
 const BUDGET_RATIO = 0.5;
@@ -46,7 +45,6 @@ export async function main(ns : NS) : Promise<void> {
 
 function sellFlippedPositions(ns: NS, stocks: Stock[]) {
     stocks.filter(stock => stock.buyPositionType != 'Hold' && stock.positionType != stock.buyPositionType)
-        // .filter(stock => stock.ticksSinceLastBuy >= WAIT_TICKS_BEFORE_SELL)
         .forEach(stock => stock.sellAll('Flipped'));
 }
 
