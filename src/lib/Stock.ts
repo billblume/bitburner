@@ -1,6 +1,7 @@
 import { NS } from '@ns'
 
 const PRICE_HISTORY_LEN = 41;
+const RECENT_PRICE_HISTORY_LEN = 5;
 const COMMISSION_FEE = 100000;
 const MIN_BUY_AMOUNT = COMMISSION_FEE * 100;
 
@@ -117,7 +118,9 @@ export class Stock {
         }
         */
 
-        this.estProfit = Math.abs(this.forecast - 0.5) * this.volatility;
+        const recentPriceHistory = this.priceHistory.slice(-RECENT_PRICE_HISTORY_LEN);
+        const avgPrice = recentPriceHistory.reduce((totPrice, currPrice) => totPrice + currPrice, 0) / recentPriceHistory.length;
+        this.estProfit = Math.abs(this.forecast - 0.5) * this.volatility * avgPrice;
     }
 
     printForecast(): void {
