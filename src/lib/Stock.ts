@@ -159,7 +159,7 @@ export class Stock {
         }
 
         this.ns.print(this.ns.sprintf(
-            'WARNING Buy  %5s %6s %5s at %8s, Pft:      -.--   -.--%%, Fcst: %5.2f%%, Vol: %4.2f%%',
+            'WARNING Buy  %5s %6s %5s at %8s, Pft:     -.--    -.--%%, Fcst: %5.2f%%, Vol: %4.2f%%',
             this.sym,
             this.ns.nFormat(shares, '0.00a'),
             this.buyPositionType,
