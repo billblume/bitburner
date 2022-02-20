@@ -159,11 +159,11 @@ export class Stock {
         }
 
         this.ns.print(this.ns.sprintf(
-            'WARNING Buying %s %s shares of %s for %s, Forecast: %.2f%%, Vol: %.2f%%',
-            this.buyPositionType,
-            this.ns.nFormat(shares, '0.000a'),
+            'WARNING Buy  %5s %6s %5s at %8s, Pft:      -.--   -.--%%, Fcst: %5.2f%%, Vol: %4.2f%%',
             this.sym,
-            this.ns.nFormat(cost, '$0.000a'),
+            this.ns.nFormat(shares, '0.00a'),
+            this.buyPositionType,
+            this.ns.nFormat(cost, '$0.00a'),
             100 * this.forecast,
             100 * this.volatility
         ));
@@ -190,19 +190,19 @@ export class Stock {
 
         const cost = this.shares * this.buyPrice + COMMISSION_FEE;
         const profit = sales - cost;
-        const prefix = profit >= 0 ? '' : 'ERROR ';
+        const prefix = profit >= 0 ? '       ' : 'ERROR  ';
         this.ns.print(this.ns.sprintf(
-            '%sSelling %s %s shares of %s for %s, Profit: %s %.02f%%, Reason: %s, Forecast: %.2f%%, Vol: %.2f%%',
+            '%s Sell %5s %6s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%, Reason: %s',
             prefix,
-            this.positionType,
-            this.ns.nFormat(this.shares, '0.000a'),
             this.sym,
-            this.ns.nFormat(sales, '$0.000a'),
-            this.ns.nFormat(profit, '$0.000a'),
+            this.ns.nFormat(this.shares, '0.00a'),
+            this.positionType,
+            this.ns.nFormat(sales, '$0.00a'),
+            this.ns.nFormat(profit, '$0.00a'),
             cost > 0 ? 100 * profit / cost : 0,
-            reason,
             100 * this.forecast,
-            100 * this.volatility
+            100 * this.volatility,
+            reason,
         ));
 
         this.totalCost += cost;
@@ -250,19 +250,17 @@ export class Stock {
             return;
         }
 
-        const price = this.ns.stock.getPrice(this.sym);
         const sales = this.ns.stock.getSaleGain(this.sym, this.shares, this.positionType);
         const cost = this.shares * this.buyPrice + COMMISSION_FEE;
         const profit = sales - cost;
         const percentProfit = cost > 0 ? 100 * profit / cost : 0;
         this.ns.print(this.ns.sprintf(
-            'INFO Owned %s: %s %s shares, Buy price: %s, Curr price: %s, Profit %s %.02f%%, Forecast: %.2f%%, Vol: %.2f%%',
+            'INFO    Hold %5s %6s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%',
             this.sym,
+            this.ns.nFormat(this.shares, '0.00a'),
             this.positionType,
-            this.ns.nFormat(this.shares, '0.000a'),
-            this.ns.nFormat(this.buyPrice, '$0.000a'),
-            this.ns.nFormat(price, '$0.000a'),
-            this.ns.nFormat(profit, '$0.000a'),
+            this.ns.nFormat(sales, '$0.00a'),
+            this.ns.nFormat(profit, '$0.00a'),
             percentProfit,
             100 * this.forecast,
             100 * this.volatility

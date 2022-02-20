@@ -113,10 +113,9 @@ function printReport(ns: NS, stocks: Stock[]): void {
     const percentProfit = totalCost > 0 ? 100 * totalProfit / totalCost : 0;
 
     ns.print(ns.sprintf(
-        'INFO Total Sales: Costs: %s, Sales: %s, Profit: %s %.02f%%',
-        ns.nFormat(totalCost, '$0.000a'),
-        ns.nFormat(totalSales, '$0.000a'),
-        ns.nFormat(totalProfit, '$0.000a'),
+        'INFO    Total                      %8s, Pft: %9s %6.02f%%',
+        ns.nFormat(totalSales, '$0.00a'),
+        ns.nFormat(totalProfit, '$0.00a'),
         percentProfit
     ));
 }
