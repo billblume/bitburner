@@ -13,6 +13,9 @@ export class Stock {
     positionType: string;
     shares: number;
     buyPrice: number;
+    saleGain: number;
+    profit: number;
+    profitRatio: number;
     forecast: number;
     volatility: number;
     buyPositionType: string;
@@ -29,6 +32,9 @@ export class Stock {
         this.positionType = 'None';
         this.shares = 0;
         this.buyPrice = 0;
+        this.saleGain = 0;
+        this.profit = 0;
+        this.profitRatio = 0;
         this.forecast = 0.5;
         this.volatility = 0;
         this.buyPositionType = 'Hold';
@@ -60,6 +66,18 @@ export class Stock {
             this.shares = 0;
             this.buyPrice = 0;
         }
+
+        if (this.shares > 0) {
+            this.saleGain = this.ns.stock.getSaleGain(this.sym, this.shares, this.positionType);
+            const cost = this.shares * this.buyPrice + COMMISSION_FEE;
+            this.profit = this.saleGain - cost;
+            this.profitRatio = cost > 0 ? this.profit / cost : 0;
+        } else {
+            this.saleGain = 0;
+            this.profit = 0;
+            this.profitRatio = 0;
+        }
+
     }
 
     updatePriceHistory(): void {
@@ -180,36 +198,31 @@ export class Stock {
             return 0;
         }
 
-        const sales = this.ns.stock.getSaleGain(this.sym, this.shares, this.positionType);
-
         if (this.positionType === 'Long') {
             this.ns.stock.sell(this.sym, this.shares);
         } else if (this.positionType === 'Short') {
             this.ns.stock.sellShort(this.sym, this.shares);
         }
 
-        const cost = this.shares * this.buyPrice + COMMISSION_FEE;
-        const profit = sales - cost;
-        const prefix = profit >= 0 ? '       ' : 'ERROR  ';
+        const prefix = this.profitRatio >= 0 ? '       ' : 'ERROR  ';
         this.ns.print(this.ns.sprintf(
             '%s Sell %5s %6s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%, Reason: %s',
             prefix,
             this.sym,
             this.ns.nFormat(this.shares, '0.00a'),
             this.positionType,
-            this.ns.nFormat(sales, '$0.00a'),
-            this.ns.nFormat(profit, '$0.00a'),
-            cost > 0 ? 100 * profit / cost : 0,
+            this.ns.nFormat(this.saleGain, '$0.00a'),
+            this.ns.nFormat(this.profit, '$0.00a'),
+            100 * this.profitRatio,
             100 * this.forecast,
             100 * this.volatility,
             reason,
         ));
 
-        this.totalCost += cost;
-        this.totalSales += sales;
-        this.positionType = 'None';
-        this.shares = 0;
-        this.buyPrice = 0;
+        this.totalCost += this.shares * this.buyPrice + COMMISSION_FEE;
+        this.totalSales += this.saleGain;
+        const sales = this.saleGain;
+        this.updatePosition();
         const price = this.ns.stock.getPrice(this.sym);
         this.setLastPriceHistoryItem(price);
         return sales;
@@ -226,12 +239,8 @@ export class Stock {
     }
 
     salesSellAll(): number {
-        if (this.shares == 0) {
-            return 0;
-        }
-
-        return this.ns.stock.getSaleGain(this.sym, this.shares, this.positionType);
-     }
+        return this.saleGain;
+    }
 
     canSellAllProfitably(): boolean {
         const sales = this.salesSellAll();
@@ -250,18 +259,14 @@ export class Stock {
             return;
         }
 
-        const sales = this.ns.stock.getSaleGain(this.sym, this.shares, this.positionType);
-        const cost = this.shares * this.buyPrice + COMMISSION_FEE;
-        const profit = sales - cost;
-        const percentProfit = cost > 0 ? 100 * profit / cost : 0;
         this.ns.print(this.ns.sprintf(
             'INFO    Hold %5s %6s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%',
             this.sym,
             this.ns.nFormat(this.shares, '0.00a'),
             this.positionType,
-            this.ns.nFormat(sales, '$0.00a'),
-            this.ns.nFormat(profit, '$0.00a'),
-            percentProfit,
+            this.ns.nFormat(this.saleGain, '$0.00a'),
+            this.ns.nFormat(this.profit, '$0.00a'),
+            100 * this.profitRatio,
             100 * this.forecast,
             100 * this.volatility
         ));

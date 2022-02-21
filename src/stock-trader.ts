@@ -96,9 +96,10 @@ function buyStocks(ns: NS, stocks: Stock[]): void {
 }
 
 function printReport(ns: NS, stocks: Stock[]): void {
-    for (const stock of stocks) {
-        stock.reportPosition();
-    }
+    stocks
+        .filter(stock => stock.shares > 0)
+        .sort((a, b) => Math.abs(b.profit) - Math.abs(a.profit))
+        .forEach(stock => stock.reportPosition());
 
     let totalSales = 0;
     let totalCost = 0;
