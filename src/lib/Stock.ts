@@ -1,7 +1,6 @@
 import { NS } from '@ns'
 
 const PRICE_HISTORY_LEN = 41;
-const RECENT_PRICE_HISTORY_LEN = 5;
 const COMMISSION_FEE = 100000;
 const MIN_BUY_AMOUNT = COMMISSION_FEE * 100;
 
@@ -136,9 +135,7 @@ export class Stock {
         }
         */
 
-        const recentPriceHistory = this.priceHistory.slice(-RECENT_PRICE_HISTORY_LEN);
-        const avgPrice = recentPriceHistory.reduce((totPrice, currPrice) => totPrice + currPrice, 0) / recentPriceHistory.length;
-        this.estProfit = Math.abs(this.forecast - 0.5) * this.volatility * avgPrice;
+        this.estProfit = Math.abs(this.forecast - 0.5) * this.volatility;
     }
 
     printForecast(): void {
@@ -157,7 +154,7 @@ export class Stock {
         }
 
         const remainingShares = this.ns.stock.getMaxShares(this.sym) - this.shares;
-        const estPrice = this.ns.stock.getPrice(this.sym);
+        const estPrice = this.buyPositionType == 'Long' ? this.ns.stock.getAskPrice(this.sym) : this.ns.stock.getBidPrice(this.sym);
         const shares = Math.min(Math.max(0, Math.floor(budget / estPrice)), remainingShares);
 
         if (shares <= 0) {
