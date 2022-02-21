@@ -5,6 +5,7 @@ const TICK_TIME = 6000;
 const WARM_UP_TICKS = 40;
 const REPORT_FREQUENCY = 75;
 const BUDGET_RATIO = 0.5;
+const MIN_PORTFOLIO_SIZE = 5;
 
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
@@ -62,7 +63,9 @@ function sellUnderperformers(ns: NS, stocks: Stock[]): void {
     }
 
     const totalMoney = ns.getServerMoneyAvailable('home') + totalWorth;
-    let budget = Math.max(0, Math.floor((totalMoney * BUDGET_RATIO) - totalWorthUnsellable));
+    const totalBudget = Math.floor(totalMoney * BUDGET_RATIO);
+    const maxPerStockBudget = Math.floor(totalBudget / MIN_PORTFOLIO_SIZE);
+    let budget = Math.max(0, totalBudget - totalWorthUnsellable);
 
     for (const stock of stocks) {
         if (stock.shares == 0 || ! stock.canSellAllProfitably()) {
@@ -70,7 +73,8 @@ function sellUnderperformers(ns: NS, stocks: Stock[]): void {
         }
 
         if (budget > 0) {
-            budget -= stock.costBuyAll() + stock.salesSellAll();
+            const shares = stock.numSharesToBuy(Math.min(budget, maxPerStockBudget), true);
+            budget -= stock.costBuy(shares) + stock.salesSellAll();
         } else {
             stock.sellAll('Underperforming');
         }
@@ -85,12 +89,14 @@ function buyStocks(ns: NS, stocks: Stock[]): void {
     }
 
     const totalMoney = ns.getServerMoneyAvailable('home') + totalWorth;
-    let budget = Math.max(0, Math.floor((totalMoney * BUDGET_RATIO) - totalWorth));
-    const remainingBudget = budget;
+    const totalBudget = Math.floor(totalMoney * BUDGET_RATIO);
+    const maxPerStockBudget = Math.floor(totalBudget / MIN_PORTFOLIO_SIZE);
+    let budget = Math.max(0, totalBudget - totalWorth);
 
     for (const stock of stocks) {
-        if (remainingBudget > 0) {
-            budget -= stock.buy(budget);
+        if (budget > 0) {
+            const shares = stock.numSharesToBuy(Math.min(budget, maxPerStockBudget), true);
+            budget -= stock.buy(shares);
         }
     }
 }
@@ -114,7 +120,7 @@ function printReport(ns: NS, stocks: Stock[]): void {
     const percentProfit = totalCost > 0 ? 100 * totalProfit / totalCost : 0;
 
     ns.print(ns.sprintf(
-        'INFO    Total                      %8s, Pft: %9s %6.02f%%',
+        'INFO    Total                       %8s, Pft: %9s %6.02f%%',
         ns.nFormat(totalSales, '$0.00a'),
         ns.nFormat(totalProfit, '$0.00a'),
         percentProfit

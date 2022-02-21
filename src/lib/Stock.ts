@@ -148,20 +148,8 @@ export class Stock {
         ));
     }
 
-    buy(budget: number): number {
-        if (this.buyPositionType == 'Hold') {
-            return 0;
-        }
-
-        const remainingShares = this.ns.stock.getMaxShares(this.sym) - this.shares;
-        const estPrice = this.buyPositionType == 'Long' ? this.ns.stock.getAskPrice(this.sym) : this.ns.stock.getBidPrice(this.sym);
-        const shares = Math.min(Math.max(0, Math.floor(budget / estPrice)), remainingShares);
-
+    buy(shares: number): number {
         if (shares <= 0) {
-            return 0;
-        }
-
-        if (shares * estPrice < MIN_BUY_AMOUNT) {
             return 0;
         }
 
@@ -174,7 +162,7 @@ export class Stock {
         }
 
         this.ns.print(this.ns.sprintf(
-            'WARNING Buy  %5s %6s %5s at %8s, Pft:     -.--    -.--%%, Fcst: %5.2f%%, Vol: %4.2f%%',
+            'WARNING Buy  %5s %7s %5s at %8s, Pft:     -.--    -.--%%, Fcst: %5.2f%%, Vol: %4.2f%%',
             this.sym,
             this.ns.nFormat(shares, '0.00a'),
             this.buyPositionType,
@@ -190,6 +178,37 @@ export class Stock {
         return cost;
     }
 
+    numSharesToBuy(targetCost: number, subtractCurrentCost: boolean) {
+        if (this.buyPositionType == 'Hold') {
+            return 0;
+        }
+
+        targetCost -= COMMISSION_FEE;
+
+        if (subtractCurrentCost) {
+            const cost = this.shares * this.buyPrice + COMMISSION_FEE;
+            targetCost -= cost;
+        }
+
+        if (targetCost <= 0) {
+            return 0;
+        }
+
+        const remainingShares = this.ns.stock.getMaxShares(this.sym) - this.shares;
+        const estPrice = this.buyPositionType == 'Long' ? this.ns.stock.getAskPrice(this.sym) : this.ns.stock.getBidPrice(this.sym);
+        const shares = Math.min(Math.max(0, Math.floor(targetCost / estPrice)), remainingShares);
+
+        if (shares <= 0) {
+            return 0;
+        }
+
+        if (shares * estPrice < MIN_BUY_AMOUNT) {
+            return 0;
+        }
+
+        return shares;
+    }
+
     sellAll(reason: string): number {
         if (this.shares === 0 || this.positionType == 'None') {
             return 0;
@@ -203,7 +222,7 @@ export class Stock {
 
         const prefix = this.profitRatio >= 0 ? '       ' : 'ERROR  ';
         this.ns.print(this.ns.sprintf(
-            '%s Sell %5s %6s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%, Reason: %s',
+            '%s Sell %5s %7s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%, Reason: %s',
             prefix,
             this.sym,
             this.ns.nFormat(this.shares, '0.00a'),
@@ -235,6 +254,14 @@ export class Stock {
         return this.ns.stock.getPurchaseCost(this.sym, remainingShares, this.buyPositionType);
     }
 
+    costBuy(shares: number): number {
+        if (shares <= 0) {
+            return 0;
+        }
+
+        return this.ns.stock.getPurchaseCost(this.sym, shares, this.buyPositionType);
+    }
+
     salesSellAll(): number {
         return this.saleGain;
     }
@@ -257,7 +284,7 @@ export class Stock {
         }
 
         this.ns.print(this.ns.sprintf(
-            'INFO    Hold %5s %6s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%',
+            'INFO    Hold %5s %7s %5s at %8s, Pft: %9s %6.02f%%, Fcst: %5.2f%%, Vol: %4.2f%%',
             this.sym,
             this.ns.nFormat(this.shares, '0.00a'),
             this.positionType,
