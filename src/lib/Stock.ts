@@ -13,6 +13,7 @@ export class Stock {
     shares: number;
     buyPrice: number;
     saleGain: number;
+    cost: number;
     profit: number;
     profitRatio: number;
     forecast: number;
@@ -32,6 +33,7 @@ export class Stock {
         this.shares = 0;
         this.buyPrice = 0;
         this.saleGain = 0;
+        this.cost = 0;
         this.profit = 0;
         this.profitRatio = 0;
         this.forecast = 0.5;
@@ -68,11 +70,12 @@ export class Stock {
 
         if (this.shares > 0) {
             this.saleGain = this.ns.stock.getSaleGain(this.sym, this.shares, this.positionType);
-            const cost = this.shares * this.buyPrice + COMMISSION_FEE;
-            this.profit = this.saleGain - cost;
-            this.profitRatio = cost > 0 ? this.profit / cost : 0;
+            this.cost = this.shares * this.buyPrice + COMMISSION_FEE;
+            this.profit = this.saleGain - this.cost;
+            this.profitRatio = this.cost > 0 ? this.profit / this.cost : 0;
         } else {
             this.saleGain = 0;
+            this.cost = 0;
             this.profit = 0;
             this.profitRatio = 0;
         }
@@ -186,8 +189,7 @@ export class Stock {
         targetCost -= COMMISSION_FEE;
 
         if (subtractCurrentCost) {
-            const cost = this.shares * this.buyPrice + COMMISSION_FEE;
-            targetCost -= cost;
+            targetCost -= this.cost;
         }
 
         if (targetCost <= 0) {
@@ -235,7 +237,7 @@ export class Stock {
             reason,
         ));
 
-        this.totalCost += this.shares * this.buyPrice + COMMISSION_FEE;
+        this.totalCost += this.cost;
         this.totalSales += this.saleGain;
         const sales = this.saleGain;
         this.updatePosition();
@@ -267,15 +269,7 @@ export class Stock {
     }
 
     canSellAllProfitably(): boolean {
-        const sales = this.salesSellAll();
-
-        if (sales == 0) {
-            return false;
-        }
-
-        const cost = this.shares * this.buyPrice + 2 * COMMISSION_FEE;
-        const profit = sales - cost;
-        return profit > 0;
+        return this.saleGain > this.cost;
     }
 
     reportPosition(): void {

@@ -6,6 +6,7 @@ const WARM_UP_TICKS = 40;
 const REPORT_FREQUENCY = 75;
 const BUDGET_RATIO = 0.5;
 const MIN_PORTFOLIO_SIZE = 5;
+const MIN_EST_PROFIT_GAIN = 1.3;
 
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
@@ -50,54 +51,88 @@ function sellFlippedPositions(ns: NS, stocks: Stock[]) {
 }
 
 function sellUnderperformers(ns: NS, stocks: Stock[]): void {
-    let totalWorth = 0;
-    let totalWorthUnsellable = 0;
+    while (sellWorstPerformer(ns, stocks));
+}
+
+function sellWorstPerformer(ns: NS, stocks: Stock[]): boolean {
+    const worstPerformer = stocks.filter(stock => stock.canSellAllProfitably()).at(-1);
+
+    if (worstPerformer == undefined) {
+        return false;
+    }
+
+    // Simulate a buyStocks() call with the worst performer sold.
+    // If it isn't bought back, sell it for real.
+
+    let totalCost = 0;
 
     for (const stock of stocks) {
-        const sales = stock.salesSellAll();
-        totalWorth += sales;
-
-        if (! stock.canSellAllProfitably()) {
-            totalWorthUnsellable += sales;
+        if (stock != worstPerformer) {
+            totalCost += stock.cost;
         }
     }
 
-    const totalMoney = ns.getServerMoneyAvailable('home') + totalWorth;
+    const totalMoney = ns.getServerMoneyAvailable('home') + totalCost + worstPerformer.saleGain;
     const totalBudget = Math.floor(totalMoney * BUDGET_RATIO);
     const maxPerStockBudget = Math.floor(totalBudget / MIN_PORTFOLIO_SIZE);
-    let budget = Math.max(0, totalBudget - totalWorthUnsellable);
+    let budget = Math.max(0, totalBudget - totalCost);
+    let stockBought = false;
+    let estProfitXCostBought = 0;
+    let totalCostBought = 0;
 
     for (const stock of stocks) {
-        if (stock.shares == 0 || ! stock.canSellAllProfitably()) {
-            continue;
+        if (budget <= 0) {
+            break;
         }
 
-        if (budget > 0) {
-            const shares = stock.numSharesToBuy(Math.min(budget, maxPerStockBudget), true);
-            budget -= stock.costBuy(shares) + stock.salesSellAll();
-        } else {
-            stock.sellAll('Underperforming');
+        const shares = stock.numSharesToBuy(Math.min(budget, maxPerStockBudget), stock != worstPerformer);
+
+        if (stock == worstPerformer) {
+            if (shares > 0 || ! stockBought) {
+                return false;
+            }
+
+            break;
+        }
+
+        if (shares > 0) {
+            const costBought = stock.costBuy(shares);
+            budget -= costBought;
+            stockBought = true;
+            estProfitXCostBought += costBought * stock.estProfit;
+            totalCostBought += costBought;
         }
     }
+
+    const estProfitBought = estProfitXCostBought / totalCostBought;
+
+    if (estProfitBought / worstPerformer.estProfit < MIN_EST_PROFIT_GAIN) {
+        return false;
+    }
+
+    worstPerformer.sellAll('Underperforming');
+    return true;
 }
 
 function buyStocks(ns: NS, stocks: Stock[]): void {
-    let totalWorth = 0;
+    let totalCost = 0;
 
     for (const stock of stocks) {
-        totalWorth += stock.salesSellAll();
+        totalCost += stock.cost;
     }
 
-    const totalMoney = ns.getServerMoneyAvailable('home') + totalWorth;
+    const totalMoney = ns.getServerMoneyAvailable('home') + totalCost;
     const totalBudget = Math.floor(totalMoney * BUDGET_RATIO);
     const maxPerStockBudget = Math.floor(totalBudget / MIN_PORTFOLIO_SIZE);
-    let budget = Math.max(0, totalBudget - totalWorth);
+    let budget = Math.max(0, totalBudget - totalCost);
 
     for (const stock of stocks) {
-        if (budget > 0) {
-            const shares = stock.numSharesToBuy(Math.min(budget, maxPerStockBudget), true);
-            budget -= stock.buy(shares);
+        if (budget <= 0) {
+            break;
         }
+
+        const shares = stock.numSharesToBuy(Math.min(budget, maxPerStockBudget), true);
+        budget -= stock.buy(shares);
     }
 }
 
