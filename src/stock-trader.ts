@@ -12,7 +12,7 @@ export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
     ns.enableLog('print');
     const player = ns.getPlayer();
-    const has4SData = player.has4SData;
+    const has4SData = player.has4SDataTixApi;
     const symbols = ns.stock.getSymbols();
     const stocks = symbols.map(sym => new Stock(ns, sym, has4SData));
 
