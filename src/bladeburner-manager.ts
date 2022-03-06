@@ -4,8 +4,8 @@ const STAMINA_LOW = 0.5;
 const STAMINA_HIGH = 0.95;
 const CHAOS_LOW = 25;
 const CHAOS_HIGH = 50;
-const POPULATION_LOW = 1e6;
-const POPULATION_HIGH = 2e6;
+const POPULATION_LOW = 1e8;
+const POPULATION_HIGH = 1e9;
 const MIN_SUCCESS_CHANCE_SPREAD = 0.9;
 const MIN_CONTRACT_SUCCESS_CHANCE = 0.5;
 const MIN_OPERATION_SUCCESS_CHANCE = 0.6;
@@ -303,18 +303,41 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
 }
 
 function getBestAction(ns: NS, actions: IAction[]): IAction|null {
+    const city = ns.bladeburner.getCity();
+    const estPop = ns.bladeburner.getCityEstimatedPopulation(city);
+    const isLowPop = estPop < POPULATION_LOW
     const doableActions = actions
-    .filter(action => ns.bladeburner.getActionCountRemaining(action.type, action.name) > 0)
-    .map(action => {
-        const successChance = ns.bladeburner.getActionEstimatedSuccessChance(action.type, action.name);
-        const repGain = ns.bladeburner.getActionRepGain(action.type, action.name, 1);
-        const time = ns.bladeburner.getActionTime(action.type, action.name);
-        const score = repGain * (successChance[0] + successChance[1]) / 2 / time;
-        return { type: action.type, name: action.name, minSuccess: successChance[0], score: score };
-    })
-    .filter(actionInfo => actionInfo.minSuccess >=
-        (actionInfo.type == ActionType.Operations ? MIN_OPERATION_SUCCESS_CHANCE : MIN_CONTRACT_SUCCESS_CHANCE))
-    .sort((a, b) => b.score - a.score);
+        .filter(action => ns.bladeburner.getActionCountRemaining(action.type, action.name) > 0)
+        .map(action => {
+            const successChance = ns.bladeburner.getActionEstimatedSuccessChance(action.type, action.name);
+            const repGain = ns.bladeburner.getActionRepGain(action.type, action.name, 1);
+            const time = ns.bladeburner.getActionTime(action.type, action.name);
+            const avgSuccess = successChance[0] + successChance[1] / 2;
+            const score = repGain * avgSuccess / time;
+            return {
+                type: action.type,
+                name: action.name,
+                minSuccess: successChance[0],
+                avgSuccess: avgSuccess,
+                score: score
+            };
+        })
+        .filter(actionInfo => {
+            if (isLowPop) {
+                if (actionInfo.type == ActionType.Operations) {
+                    return actionInfo.avgSuccess >= MIN_OPERATION_SUCCESS_CHANCE;
+                } else {
+                    return actionInfo.avgSuccess >= MIN_CONTRACT_SUCCESS_CHANCE;
+                }
+            } else {
+                if (actionInfo.type == ActionType.Operations) {
+                    return actionInfo.minSuccess >= MIN_OPERATION_SUCCESS_CHANCE;
+                } else {
+                    return actionInfo.minSuccess >= MIN_CONTRACT_SUCCESS_CHANCE;
+                }
+            }
+        })
+        .sort((a, b) => b.score - a.score);
 
     if (doableActions.length > 0) {
         return { type: doableActions[0].type, name: doableActions[0].name };
