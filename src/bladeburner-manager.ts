@@ -4,9 +4,10 @@ const STAMINA_LOW = 0.5;
 const STAMINA_HIGH = 0.95;
 const CHAOS_LOW = 25;
 const CHAOS_HIGH = 50;
+const POPULATION_REALLY_LOW = 1e6;
 const POPULATION_LOW = 1e8;
 const POPULATION_HIGH = 1e9;
-const MIN_SUCCESS_CHANCE_SPREAD = 0.9;
+const MIN_SUCCESS_CHANCE_SPREAD = 0.95;
 const MIN_CONTRACT_SUCCESS_CHANCE = 0.5;
 const MIN_OPERATION_SUCCESS_CHANCE = 0.6;
 const MIN_BLACK_OP_SUCCESS_CHANCE = 0.9;
@@ -64,7 +65,7 @@ export async function main(ns : NS) : Promise<void> {
         switchCity(ns);
         const action = selectAction(ns, lastAction);
         const actionTime = ns.bladeburner.getActionTime(action.type, action.name);
-        ns.print(`Running action '${action.type}: ${action.name}'`);
+        // ns.print(`Running action '${action.type}: ${action.name}'`);
         const success = ns.bladeburner.startAction(action.type, action.name);
 
         if (! success) {
@@ -213,10 +214,12 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
     const percentStamina = stamina[0] / stamina[1];
 
     if (percentStamina < STAMINA_LOW) {
+        ns.print(`Picking ${Action.Hospital} because stamina is low.`);
         return { type: ActionType.General, name: Action.Hospital };
     }
 
     if (percentStamina < STAMINA_HIGH && lastAction.name == Action.Hospital) {
+        ns.print(`Picking ${Action.Hospital} because stamina is low.`);
         return { type: ActionType.General, name: Action.Hospital };
     }
 
@@ -224,14 +227,26 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
     const chaos = ns.bladeburner.getCityChaos(city);
 
     if (chaos > CHAOS_HIGH) {
+        ns.print(`Picking ${Action.Diplomacy} because chaos is high.`);
         return { type: ActionType.General, name: Action.Diplomacy };
     }
 
     if (chaos > CHAOS_LOW && lastAction.name == Action.Diplomacy) {
+        ns.print(`Picking ${Action.Diplomacy} because chaos is high.`);
         return { type: ActionType.General, name: Action.Diplomacy };
     }
 
     const estPop = ns.bladeburner.getCityEstimatedPopulation(city);
+    const assassinationSuccessChance =
+        ns.bladeburner.getActionEstimatedSuccessChance(ActionType.Operations, Action.Assassination);
+    const highSpread = assassinationSuccessChance[1] > 0 &&
+        assassinationSuccessChance[0] / assassinationSuccessChance[1] < MIN_SUCCESS_CHANCE_SPREAD;
+
+    if (estPop >= POPULATION_REALLY_LOW && highSpread) {
+        ns.print(`Picking ${Action.FieldAnalysis} because success chance spread is too large.`);
+        return { type: ActionType.General, name: Action.FieldAnalysis };
+    }
+
     let growPop = false;
 
     if (estPop < POPULATION_LOW) {
@@ -258,23 +273,18 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
         ]);
 
         if (bestAction) {
+            ns.print(`Picking ${bestAction.name} because population is low.`);
             return bestAction;
         }
 
+        ns.print(`Picking ${Action.FieldAnalysis} because population is low.`);
         return  { type: ActionType.General, name: Action.FieldAnalysis };
-    }
-
-    const assassinationSuccessChance =
-        ns.bladeburner.getActionEstimatedSuccessChance(ActionType.Operations, Action.Assassination);
-
-    if (assassinationSuccessChance[1] > 0 &&
-            assassinationSuccessChance[0] / assassinationSuccessChance[1] < MIN_SUCCESS_CHANCE_SPREAD) {
-        return { type: ActionType.General, name: Action.FieldAnalysis };
     }
 
     const blackOpAction = getBlackOpAction(ns);
 
     if (blackOpAction) {
+        ns.print(`Picking BlackOps ${blackOpAction.name}.`);
         return blackOpAction;
     }
 
@@ -291,14 +301,17 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
     ]);
 
     if (bestAction) {
+        ns.print(`Picking action ${bestAction.name}.`);
         return bestAction;
     }
 
     if (assassinationSuccessChance[0] >= MIN_OPERATION_SUCCESS_CHANCE &&
             ns.bladeburner.getActionCountRemaining(ActionType.Operations, Action.Assassination) == 0) {
+        ns.print(`Picking ${Action.InciteViolence} because there are no available assassination contracts.`);
         return { type: ActionType.General, name: Action.InciteViolence };
     }
 
+    ns.print(`Picking ${Action.Training} because there is nothing better to do.`);
     return { type: ActionType.General, name: Action.Training };
 }
 
