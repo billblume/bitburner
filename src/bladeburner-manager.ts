@@ -236,6 +236,13 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
         return { type: ActionType.General, name: Action.Diplomacy };
     }
 
+    const blackOpAction = getBlackOpAction(ns);
+
+    if (blackOpAction) {
+        ns.print(`Picking BlackOps ${blackOpAction.name}.`);
+        return blackOpAction;
+    }
+
     const estPop = ns.bladeburner.getCityEstimatedPopulation(city);
     const assassinationSuccessChance =
         ns.bladeburner.getActionEstimatedSuccessChance(ActionType.Operations, Action.Assassination);
@@ -281,14 +288,7 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
         return  { type: ActionType.General, name: Action.FieldAnalysis };
     }
 
-    const blackOpAction = getBlackOpAction(ns);
-
-    if (blackOpAction) {
-        ns.print(`Picking BlackOps ${blackOpAction.name}.`);
-        return blackOpAction;
-    }
-
-    const bestAction = getBestAction(ns, [
+    const allContractsAndOps = [
         { type: ActionType.Operations, name: Action.Assassination },
         { type: ActionType.Operations, name: Action.StealthRetirement },
         { type: ActionType.Operations, name: Action.Raid },
@@ -298,16 +298,19 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
         { type: ActionType.Contracts, name: Action.BountyHunter },
         { type: ActionType.Contracts, name: Action.Retirement },
         { type: ActionType.Contracts, name: Action.Tracking }
-    ]);
+    ];
+
+    const bestAction = getBestAction(ns, allContractsAndOps);
 
     if (bestAction) {
         ns.print(`Picking action ${bestAction.name}.`);
         return bestAction;
     }
 
-    if (assassinationSuccessChance[0] >= MIN_OPERATION_SUCCESS_CHANCE &&
-            ns.bladeburner.getActionCountRemaining(ActionType.Operations, Action.Assassination) == 0) {
-        ns.print(`Picking ${Action.InciteViolence} because there are no available assassination contracts.`);
+    const bestActionIgnoringCounts = getBestAction(ns, allContractsAndOps, false);
+
+    if (bestActionIgnoringCounts) {
+        ns.print(`Picking ${Action.InciteViolence} because there are no available contracts.`);
         return { type: ActionType.General, name: Action.InciteViolence };
     }
 
@@ -315,12 +318,13 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
     return { type: ActionType.General, name: Action.Training };
 }
 
-function getBestAction(ns: NS, actions: IAction[]): IAction|null {
+function getBestAction(ns: NS, actions: IAction[], filterZeroCounts = true): IAction|null {
     const city = ns.bladeburner.getCity();
     const estPop = ns.bladeburner.getCityEstimatedPopulation(city);
     const isLowPop = estPop < POPULATION_LOW
     const doableActions = actions
-        .filter(action => ns.bladeburner.getActionCountRemaining(action.type, action.name) > 0)
+        .filter(action => ! filterZeroCounts || ns.bladeburner.getActionCountRemaining(action.type, action.name) > 0)
+        .filter(action => action.name != Action.Raid || ns.bladeburner.getCityCommunities(city) > 0)
         .map(action => {
             const successChance = ns.bladeburner.getActionEstimatedSuccessChance(action.type, action.name);
             const repGain = ns.bladeburner.getActionRepGain(action.type, action.name, 1);
