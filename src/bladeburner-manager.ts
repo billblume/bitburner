@@ -329,7 +329,7 @@ function getBestAction(ns: NS, actions: IAction[], filterZeroCounts = true): IAc
             const successChance = ns.bladeburner.getActionEstimatedSuccessChance(action.type, action.name);
             const repGain = ns.bladeburner.getActionRepGain(action.type, action.name, 1);
             const time = ns.bladeburner.getActionTime(action.type, action.name);
-            const avgSuccess = successChance[0] + successChance[1] / 2;
+            const avgSuccess = (successChance[0] + successChance[1]) / 2;
             const score = repGain * avgSuccess / time;
             return {
                 type: action.type,
