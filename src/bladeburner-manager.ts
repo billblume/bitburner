@@ -10,6 +10,7 @@ const POPULATION_HIGH = 1e9;
 const MIN_SUCCESS_CHANCE_SPREAD = 0.95;
 const MIN_CONTRACT_SUCCESS_CHANCE = 0.5;
 const MIN_OPERATION_SUCCESS_CHANCE = 0.6;
+const MIN_OPERATION_SUCCESS_CHANCE_GROW_POP = 0.5;
 const MIN_BLACK_OP_SUCCESS_CHANCE = 0.9;
 const OVERCLOCK_LEVELING_THRESHOLD = 30;
 const SKILL_OVERCLOCK = 'Overclock';
@@ -277,7 +278,7 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
             { type: ActionType.Operations, name: Action.Undercover },
             { type: ActionType.Operations, name: Action.Investigation },
             { type: ActionType.Contracts, name: Action.Tracking }
-        ]);
+        ], true, true);
 
         if (bestAction) {
             ns.print(`Picking ${bestAction.name} because population is low.`);
@@ -318,10 +319,8 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
     return { type: ActionType.General, name: Action.Training };
 }
 
-function getBestAction(ns: NS, actions: IAction[], filterZeroCounts = true): IAction|null {
+function getBestAction(ns: NS, actions: IAction[], filterZeroCounts = true, growPop = false): IAction|null {
     const city = ns.bladeburner.getCity();
-    const estPop = ns.bladeburner.getCityEstimatedPopulation(city);
-    const isLowPop = estPop < POPULATION_LOW
     const doableActions = actions
         .filter(action => ! filterZeroCounts || ns.bladeburner.getActionCountRemaining(action.type, action.name) > 0)
         .filter(action => action.name != Action.Raid || ns.bladeburner.getCityCommunities(city) > 0)
@@ -340,9 +339,9 @@ function getBestAction(ns: NS, actions: IAction[], filterZeroCounts = true): IAc
             };
         })
         .filter(actionInfo => {
-            if (isLowPop) {
+            if (growPop) {
                 if (actionInfo.type == ActionType.Operations) {
-                    return actionInfo.avgSuccess >= MIN_OPERATION_SUCCESS_CHANCE;
+                    return actionInfo.avgSuccess >= MIN_OPERATION_SUCCESS_CHANCE_GROW_POP;
                 } else {
                     return actionInfo.avgSuccess >= MIN_CONTRACT_SUCCESS_CHANCE;
                 }
