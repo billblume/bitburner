@@ -4,9 +4,9 @@ const STAMINA_LOW = 0.5;
 const STAMINA_HIGH = 0.95;
 const CHAOS_LOW = 25;
 const CHAOS_HIGH = 50;
-const POPULATION_REALLY_LOW = 1e6;
 const POPULATION_LOW = 1e8;
 const POPULATION_HIGH = 1e9;
+const MIN_EST_POP_GROWTH = 1.001;
 const MIN_SUCCESS_CHANCE_SPREAD = 0.95;
 const MIN_CONTRACT_SUCCESS_CHANCE = 0.5;
 const MIN_OPERATION_SUCCESS_CHANCE = 0.6;
@@ -14,7 +14,7 @@ const MIN_OPERATION_SUCCESS_CHANCE_GROW_POP = 0.5;
 const MIN_BLACK_OP_SUCCESS_CHANCE = 0.9;
 const OVERCLOCK_LEVELING_THRESHOLD = 30;
 const SKILL_OVERCLOCK = 'Overclock';
-const CITY_SWITCH_THRESHOLD = 0.5;
+const CITY_SWITCH_THRESHOLD = 0.9;
 
 const CITIES = [
     'Aevum',
@@ -60,11 +60,22 @@ export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
     ns.enableLog('print');
     let lastAction: IAction = { type: ActionType.General, name: Action.Hospital };
+    let growPop = false;
 
     while (true) {
         buySkills(ns);
         switchCity(ns);
-        const action = selectAction(ns, lastAction);
+
+        const city = ns.bladeburner.getCity();
+        const estPop = ns.bladeburner.getCityEstimatedPopulation(city);
+
+        if (estPop < POPULATION_LOW) {
+            growPop = true;
+        } else if (estPop >= POPULATION_HIGH) {
+            growPop = false;
+        }
+
+        const action = selectAction(ns, lastAction, growPop);
         const actionTime = ns.bladeburner.getActionTime(action.type, action.name);
         // ns.print(`Running action '${action.type}: ${action.name}'`);
         const success = ns.bladeburner.startAction(action.type, action.name);
@@ -75,6 +86,18 @@ export async function main(ns : NS) : Promise<void> {
         }
 
         await ns.sleep(actionTime);
+
+        if (growPop) {
+            const newEstPop = ns.bladeburner.getCityEstimatedPopulation(city);
+
+            if (
+                (action.name == Action.Investigation || action.name == Action.Sting) &&
+                newEstPop < estPop * MIN_EST_POP_GROWTH
+            ) {
+                growPop = false;
+            }
+        }
+
         lastAction = action;
     }
 }
@@ -210,7 +233,7 @@ function switchCity(ns: NS): void {
     }
 }
 
-function selectAction(ns: NS, lastAction: IAction): IAction {
+function selectAction(ns: NS, lastAction: IAction, growPop: boolean): IAction {
     const stamina = ns.bladeburner.getStamina();
     const percentStamina = stamina[0] / stamina[1];
 
@@ -244,33 +267,15 @@ function selectAction(ns: NS, lastAction: IAction): IAction {
         return blackOpAction;
     }
 
-    const estPop = ns.bladeburner.getCityEstimatedPopulation(city);
     const assassinationSuccessChance =
         ns.bladeburner.getActionEstimatedSuccessChance(ActionType.Operations, Action.Assassination);
-    const highSpread = assassinationSuccessChance[1] > 0 &&
-        assassinationSuccessChance[0] / assassinationSuccessChance[1] < MIN_SUCCESS_CHANCE_SPREAD;
-
-    if (estPop >= POPULATION_REALLY_LOW && highSpread) {
-        ns.print(`Picking ${Action.FieldAnalysis} because success chance spread is too large.`);
-        return { type: ActionType.General, name: Action.FieldAnalysis };
-    }
-
-    let growPop = false;
-
-    if (estPop < POPULATION_LOW) {
-        growPop = true;
-    }
 
     if (
-        estPop < POPULATION_HIGH &&
-        (
-            lastAction.name == Action.FieldAnalysis ||
-            lastAction.name == Action.Tracking ||
-            lastAction.name == Action.Investigation ||
-            lastAction.name == Action.Undercover
-        )
+        assassinationSuccessChance[1] > 0 &&
+        assassinationSuccessChance[0] / assassinationSuccessChance[1] < MIN_SUCCESS_CHANCE_SPREAD
     ) {
-        growPop = true;
+        ns.print(`Picking ${Action.FieldAnalysis} because success chance spread is too large.`);
+        return { type: ActionType.General, name: Action.FieldAnalysis };
     }
 
     if (growPop) {
