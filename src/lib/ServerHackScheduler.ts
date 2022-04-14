@@ -7,6 +7,7 @@ const WEAKEN_UPPER_THRESHOLD = 1;
 const GROW_LOWER_THRESHOLD = 0.75;
 const GROW_UPPER_THRESHOLD = 0.9;
 const RESERVED_HOME_RAM = 128;
+const RESERVED_HOME_RAM_WITH_CORP = 1200;
 const HACKNET_RAM_SCRIPTING_FRACTION = 0.5;
 const HACK_MONEY_FRACTION = 0.5;
 const PRINT_JOB_INFO = false;
@@ -118,7 +119,13 @@ export class ServerHackScheduler {
         let ram = this.ns.getServerMaxRam(hostname);
 
         if (hostname == 'home') {
-            ram = Math.max(0, ram - RESERVED_HOME_RAM);
+            const player = this.ns.getPlayer();
+
+            if (player.hasCorporation) {
+                ram = Math.max(0, ram - RESERVED_HOME_RAM_WITH_CORP);
+            } else {
+                ram = Math.max(0, ram - RESERVED_HOME_RAM);
+            }
         } else if (hostname.startsWith('hacknet-node-')) {
             ram = Math.floor(ram * HACKNET_RAM_SCRIPTING_FRACTION);
         }

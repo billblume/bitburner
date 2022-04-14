@@ -16,6 +16,8 @@ Commands run and exit quickly.  Services will run until killed.
 * hack-manager.js: Service that chooses the best server for hacking and hacks that server.  It will also create private servers and hacknet servers.
 * gang-manager.js: Service that creates, equips, and ascends gang members.  This script assumes that you have unlocked [Bitnode 2](https://bitburner.readthedocs.io/en/latest/guidesandtips/recommendedbitnodeorder.html#bitnode-2-rise-of-the-underworld).
 * stock-trader.js: This service buys and sells stocks.  It only buys stocks that are likely to go up and sells them when they are more likely to go down.  Currently, this script does not know how to short stocks.  I haven't unlocked that yet.
+* bladeburner-manager.js: Service that manages the BladeBurner faction.  It doesn't handle low populatioms well.  Otherwise, it it is pretty much fire and forget.
+* corp-manager.js.  Manages the offices, warehouses, and product creation of corporations.
 
 ### Commands
 
