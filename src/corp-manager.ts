@@ -1,5 +1,6 @@
 import { NS } from '@ns'
 
+const CYCLE_MILLIS = 30000;
 const TICK_INTERVAL = 10000;
 const BONUS_TICK_INTERVAL = 1000;
 const UPGRADE_COST_WEIGHT = 100;
@@ -11,13 +12,12 @@ const OFFICE_GROW_SIZE_SMALL = 3;
 const OFFICE_GROW_SIZE_LARGE = 15;
 const PROD_DEV_CITY = 'Aevum';
 const PROD_NAME_PREFIX = 'Widget v';
-const DESIGN_INVEST = 1000000000;
-const MARKETTING_INVEST = 1000000000;
+const DESIGN_INVEST = 1e9;
+const MARKETTING_INVEST = 1e9;
 const WAREHOUSE_MATERIALS_RATIO = 0.5;
-const WAREHOUSE_HIGH_USAGE_RATIO = 0.75;
+const WAREHOUSE_HIGH_USAGE_RATIO = 0.8;
 const WAREHOUSE_COST_WEIGHT_LOW_USAGE = 500;
 const WAREHOUSE_COST_WEIGHT_HIGH_USAGE = 10;
-const MAX_PRODUCTS = 3;
 
 const CORP_UPGRADES = [
     "Smart Factories",
@@ -108,8 +108,7 @@ export async function main(ns : NS) : Promise<void> {
         growWarehouses(ns);
         await buyMaterials(ns);
 
-        const tickInterval = ns.corporation.getBonusTime() > 0 ? BONUS_TICK_INTERVAL : TICK_INTERVAL;
-        await ns.sleep(tickInterval);
+        await ns.sleep(CYCLE_MILLIS);
     }
 }
 
@@ -325,7 +324,18 @@ function makeProducts(ns: NS): void {
             continue;
         }
 
-        if (division.products.length >= MAX_PRODUCTS) {
+        let maxProducts = 3;
+
+        if (ns.corporation.hasResearched(division.name, 'uPgrade: Capacity.I')) {
+            ++maxProducts;
+        }
+
+
+        if (ns.corporation.hasResearched(division.name, 'uPgrade: Capacity.II')) {
+            ++maxProducts;
+        }
+
+        if (division.products.length >= maxProducts) {
             ns.corporation.discontinueProduct(division.name, oldestProductName);
         }
 
@@ -373,9 +383,8 @@ async function buyMaterials(ns: NS): Promise<void> {
 
             const warehouse = ns.corporation.getWarehouse(division.name, city);
             const usableSpace = warehouse.size * WAREHOUSE_MATERIALS_RATIO;
-            const availableSpace = usableSpace - warehouse.sizeUsed;
 
-            if (availableSpace <= 0) {
+            if (warehouse.sizeUsed >= usableSpace) {
                 continue;
             }
 
@@ -388,11 +397,6 @@ async function buyMaterials(ns: NS): Promise<void> {
             const oldReAmount = reMaterial.qty;
             const robMaterial = ns.corporation.getMaterial(division.name, city, MAT_ROB);
             const oldRobAmount = robMaterial.qty;
-
-            // ns.print(`${MAT_AI}: ${oldAiAmount} ${newAiAmount}`);
-            // ns.print(`${MAT_HW}: ${oldHwAmount} ${newHwAmount}`);
-            // ns.print(`${MAT_RE}: ${oldReAmount} ${newReAmount}`);
-            // ns.print(`${MAT_ROB}: ${oldRobAmount} ${newRobAmount}`);
 
             let boughtMaterials = false;
 
