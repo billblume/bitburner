@@ -1,9 +1,23 @@
-import { NS, GangGenInfo, EquipmentStats } from '@ns';
+import { NS, GangGenInfo, GangMemberInfo, EquipmentStats, GangOtherInfo, GangOtherInfoObject } from '@ns';
 
 const HACKER_EQUIP_TYPES = ['Rootkit', 'Vehicle'];
 const COMBAT_EQUIP_TYPES = ['Weapon', 'Armor', 'Vehicle'];
 const BUDGET_RATIO = 0.01;
 const ASCEND_STAT_MULT_THRESHOLD = 2;
+const MAX_WANTED_PENALTY = 10;
+const MAX_HACKING_STAT_TRAINING = 100;
+const MAX_COMBAT_STAT_TRAINING = 100;
+const MIN_COMBAT_STAT_TERRORISM = 250;
+const MIN_COMBAT_STAT_TRAFFIC_ARMS = 220;
+const MIN_HACKING_STAT_WARFARE = 150;
+const MIN_COMBAT_STAT_WARFARE = 150;
+const VIGILANTE_RATIO = 0.25;
+const WARFARE_RATIO = 0.67;
+const MUG_RATIO = 0.5;
+const MIN_RESPECT = 100000;
+const MIN_POWER_RATIO = 0.75
+const CYCLE_TIME = 32000;
+
 const MEMBER_NAMES = [
     'Alice',
     'Bob',
@@ -41,7 +55,9 @@ export async function main(ns: NS): Promise<void> {
         recruitMembers(ns, gangInfo);
         ascendMembers(ns, gangInfo);
         equipMembers(ns, gangInfo);
-        await ns.sleep(4000);
+        setTasks(ns, gangInfo);
+        setTerritoryWarfare(ns, gangInfo);
+        await ns.sleep(CYCLE_TIME);
     }
 }
 
@@ -177,4 +193,91 @@ function equipMembers(ns: NS, gangInfo: GangGenInfo): void {
             }
         }
     }
+}
+
+function setTasks(ns: NS, gangInfo: GangGenInfo): void {
+    const memberNames = ns.gang.getMemberNames();
+
+    for (const memberName of memberNames) {
+        const memberInfo = ns.gang.getMemberInformation(memberName);
+        const task = getNextTask(ns, gangInfo, memberInfo);
+
+        if (task != memberInfo.task) {
+            ns.print(`Assigning '${memberName} to task '${task}'`);
+            if (! ns.gang.setMemberTask(memberName, task) ) {
+                ns.print(`Error: Failed to assign '${memberName} to task '${task}'`);
+            }
+        }
+    }
+}
+
+function getNextTask(ns: NS, gangInfo: GangGenInfo, memberInfo: GangMemberInfo): string {
+    const avgHackingStat = memberInfo.hack;
+    const avgCombatStat = (memberInfo.agi + memberInfo.def + memberInfo.dex + memberInfo.str) / 4;
+    const rand = Math.random();
+
+    if (gangInfo.isHacking && avgHackingStat < MAX_HACKING_STAT_TRAINING) {
+        return 'Train Hacking';
+    }
+
+    if (! gangInfo.isHacking && avgCombatStat < MAX_COMBAT_STAT_TRAINING) {
+        return 'Train Combat'
+    }
+
+    if (gangInfo.wantedPenalty > MAX_WANTED_PENALTY) {
+        if (rand < VIGILANTE_RATIO) {
+            return 'Vigilante Justice';
+        }
+    }
+
+    if (gangInfo.territory < 1 && ! ns.gang.canRecruitMember()) {
+        if (
+            (gangInfo.isHacking && avgHackingStat >= MIN_HACKING_STAT_WARFARE)
+            || (! gangInfo.isHacking && avgCombatStat >= MIN_COMBAT_STAT_WARFARE)
+        ) {
+            if (rand < WARFARE_RATIO) {
+                return 'Territory Warfare';
+            }
+        }
+    }
+
+    if (gangInfo.isHacking) {
+        // TODO
+        return 'Ransomware';
+    } else {
+        if (avgCombatStat >= MIN_COMBAT_STAT_TERRORISM && memberInfo.earnedRespect < MIN_RESPECT) {
+            return 'Terrorism';
+        } else if (avgCombatStat >= MIN_COMBAT_STAT_TRAFFIC_ARMS) {
+            return 'Traffick Illegal Arms';
+        } else {
+            if (rand < MUG_RATIO) {
+                return 'Mug People';
+            } else {
+                return 'Train Combat';
+            }
+        }
+    }
+}
+
+function setTerritoryWarfare(ns: NS, gangInfo: GangGenInfo): void {
+    const otherGangsInfo = ns.gang.getOtherGangInformation();
+    let maxOtherGangPower = 0;
+
+    for (const otherFaction in otherGangsInfo) {
+        if (otherFaction == gangInfo.faction) {
+            continue;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const otherGangInfo: GangOtherInfoObject = otherGangsInfo[otherFaction as keyof GangOtherInfo];
+
+        if (maxOtherGangPower < otherGangInfo.power) {
+            maxOtherGangPower = otherGangInfo.power;
+        }
+    }
+
+    ns.gang.setTerritoryWarfare(
+        gangInfo.territory < 1
+        && gangInfo.power / (gangInfo.power + maxOtherGangPower) >= MIN_POWER_RATIO
+        );
 }
