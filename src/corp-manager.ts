@@ -5,7 +5,8 @@ const TICK_INTERVAL = 10000;
 const BONUS_TICK_INTERVAL = 1000;
 const UPGRADE_COST_WEIGHT = 100;
 const EMPLOYEE_COST_WEIGHT_PROD_DEV_CITY = 1;
-const EMPLOYEE_COST_WEIGHT_OTHER_CITY = 100;
+const EMPLOYEE_COST_WEIGHT_OTHER_CITY_SMALL = 5;
+const EMPLOYEE_COST_WEIGHT_OTHER_CITY_LARGE = 100;
 const ADVERT_COST_WEIGHT_PROD = 1;
 const ADVERT_COST_WEIGHT_NON_PROD = 100;
 const OFFICE_GROW_SIZE_SMALL = 3;
@@ -16,8 +17,10 @@ const DESIGN_INVEST = 1e9;
 const MARKETTING_INVEST = 1e9;
 const WAREHOUSE_MATERIALS_RATIO = 0.5;
 const WAREHOUSE_HIGH_USAGE_RATIO = 0.8;
-const WAREHOUSE_COST_WEIGHT_LOW_USAGE = 500;
-const WAREHOUSE_COST_WEIGHT_HIGH_USAGE = 10;
+const WAREHOUSE_COST_WEIGHT_HIGH_USAGE = 5;
+const LARGE_WAREHOUSE_SIZE = 2000;
+const WAREHOUSE_COST_WEIGHT_SMALL = 50;
+const WAREHOUSE_COST_WEIGHT_LARGE = 500;
 
 const CORP_UPGRADES = [
     "Smart Factories",
@@ -173,8 +176,16 @@ function growOffices(ns: NS): void {
     for (const division of corp.divisions) {
         for (const city of division.cities) {
             const office = ns.corporation.getOffice(division.name, city);
-            const weight = division.products.length > 0 && city == PROD_DEV_CITY ?
-                EMPLOYEE_COST_WEIGHT_PROD_DEV_CITY : EMPLOYEE_COST_WEIGHT_OTHER_CITY;
+            let weight;
+
+            if (division.products.length > 0 && city == PROD_DEV_CITY) {
+                weight = EMPLOYEE_COST_WEIGHT_PROD_DEV_CITY;
+            } else if (office.employees.length < OFFICE_GROW_SIZE_LARGE) {
+                weight = EMPLOYEE_COST_WEIGHT_OTHER_CITY_SMALL;
+            } else {
+                weight = EMPLOYEE_COST_WEIGHT_OTHER_CITY_LARGE;
+            }
+
             const growSize = office.employees.length < OFFICE_GROW_SIZE_LARGE ?
                 OFFICE_GROW_SIZE_SMALL : OFFICE_GROW_SIZE_LARGE;
             const cost = ns.corporation.getOfficeSizeUpgradeCost(division.name, city, growSize);
@@ -359,8 +370,8 @@ function growWarehouses(ns: NS): void {
             const warehouse = ns.corporation.getWarehouse(division.name, city);
             const ratioUsed = warehouse.sizeUsed / warehouse.size;
             const cost = ns.corporation.getUpgradeWarehouseCost(division.name, city);
-            const weight = ratioUsed <= WAREHOUSE_HIGH_USAGE_RATIO ?
-                WAREHOUSE_COST_WEIGHT_LOW_USAGE : WAREHOUSE_COST_WEIGHT_HIGH_USAGE;
+            const weight = ratioUsed > WAREHOUSE_HIGH_USAGE_RATIO ? WAREHOUSE_COST_WEIGHT_HIGH_USAGE :
+                (warehouse.size < LARGE_WAREHOUSE_SIZE ? WAREHOUSE_COST_WEIGHT_SMALL : WAREHOUSE_COST_WEIGHT_LARGE);
             const weightedCost = cost * weight;
 
             if (weightedCost <= funds) {
@@ -401,26 +412,26 @@ async function buyMaterials(ns: NS): Promise<void> {
             let boughtMaterials = false;
 
             if (newAiAmount > oldAiAmount) {
-                ns.print(`${division.name}:${city}: Bought '${newAiAmount - oldAiAmount}' ${MAT_AI}'.`);
-                ns.corporation.buyMaterial(division.name, city,  MAT_AI, newAiAmount - oldAiAmount);
+                ns.print(`${division.name}:${city}: Bought ${newAiAmount - oldAiAmount} ${MAT_AI}'.`);
+                ns.corporation.buyMaterial(division.name, city,  MAT_AI, (newAiAmount - oldAiAmount) / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
             if (newHwAmount > oldHwAmount) {
-                ns.print(`${division.name}:${city}: Bought '${newHwAmount - oldHwAmount}' ${MAT_HW}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_HW, newHwAmount - oldHwAmount);
+                ns.print(`${division.name}:${city}: Bought ${newHwAmount - oldHwAmount} ${MAT_HW}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_HW, (newHwAmount - oldHwAmount) / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
             if (newReAmount > oldReAmount) {
-                ns.print(`${division.name}:${city}: Bought '${newReAmount - oldReAmount}' ${MAT_RE}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_RE, newReAmount - oldReAmount);
+                ns.print(`${division.name}:${city}: Bought ${newReAmount - oldReAmount} ${MAT_RE}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_RE, (newReAmount - oldReAmount) / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
             if (newRobAmount > oldRobAmount) {
-                ns.print(`${division.name}:${city}: Bought '${newRobAmount - oldRobAmount}' ${MAT_ROB}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_ROB, newRobAmount - oldRobAmount);
+                ns.print(`${division.name}:${city}: Bought ${newRobAmount - oldRobAmount} ${MAT_ROB}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_ROB, (newRobAmount - oldRobAmount) / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
