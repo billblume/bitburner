@@ -60,6 +60,20 @@ function assignTask(ns: NS, sleeveNumber: number, sleeveStats: SleeveSkills): vo
         sleeveStats.strength
     );
 
+    if (ns.gang.inGang() && sleeveStats.shock > 0) {
+        const oldTask = ns.sleeve.getTask(sleeveNumber);
+
+        if (oldTask.task != 'Recovery') {
+            ns.print(`Sleeve #${sleeveNumber} will now do shock recovery.`);
+
+            if (! ns.sleeve.setToShockRecovery(sleeveNumber)) {
+                ns.print(`ERROR: Failed to set sleeve ${sleeveNumber} to do shock recovery.`);
+            }
+        }
+
+        return;
+    }
+
     if (minCombatStat < MIN_COMBAT_STAT_FOR_HOMICIDE) {
         const money = ns.getServerMoneyAvailable('home');
 
