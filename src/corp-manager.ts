@@ -401,37 +401,37 @@ async function buyMaterials(ns: NS): Promise<void> {
 
             const [newAiAmount, newHwAmount, newReAmount, newRobAmount] = getBestMaterialRatios(division.type, usableSpace);
             const aiMaterial = ns.corporation.getMaterial(division.name, city, MAT_AI);
-            const oldAiAmount = aiMaterial.qty;
             const hwMaterial = ns.corporation.getMaterial(division.name, city, MAT_HW);
-            const oldHwAmount = hwMaterial.qty;
             const reMaterial = ns.corporation.getMaterial(division.name, city, MAT_RE);
-            const oldReAmount = reMaterial.qty;
             const robMaterial = ns.corporation.getMaterial(division.name, city, MAT_ROB);
-            const oldRobAmount = robMaterial.qty;
+            const aiBuyAmount = Math.floor(newAiAmount - aiMaterial.qty);
+            const hwBuyAmount = Math.floor(newHwAmount - hwMaterial.qty);
+            const reBuyAmount = Math.floor(newReAmount - reMaterial.qty);
+            const robBuyAmount = Math.floor(newRobAmount - robMaterial.qty);
 
             let boughtMaterials = false;
 
-            if (newAiAmount > oldAiAmount) {
-                ns.print(`${division.name}:${city}: Bought ${newAiAmount - oldAiAmount} ${MAT_AI}'.`);
-                ns.corporation.buyMaterial(division.name, city,  MAT_AI, (newAiAmount - oldAiAmount) / TICK_INTERVAL);
+            if (aiBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${aiBuyAmount} ${MAT_AI}.`);
+                ns.corporation.buyMaterial(division.name, city,  MAT_AI, aiBuyAmount / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
-            if (newHwAmount > oldHwAmount) {
-                ns.print(`${division.name}:${city}: Bought ${newHwAmount - oldHwAmount} ${MAT_HW}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_HW, (newHwAmount - oldHwAmount) / TICK_INTERVAL);
+            if (hwBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${hwBuyAmount} ${MAT_HW}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_HW, (hwBuyAmount) / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
-            if (newReAmount > oldReAmount) {
-                ns.print(`${division.name}:${city}: Bought ${newReAmount - oldReAmount} ${MAT_RE}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_RE, (newReAmount - oldReAmount) / TICK_INTERVAL);
+            if (reBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${reBuyAmount} ${MAT_RE}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_RE, (reBuyAmount) / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
-            if (newRobAmount > oldRobAmount) {
-                ns.print(`${division.name}:${city}: Bought ${newRobAmount - oldRobAmount} ${MAT_ROB}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_ROB, (newRobAmount - oldRobAmount) / TICK_INTERVAL);
+            if (robBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${robBuyAmount} ${MAT_ROB}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_ROB, (robBuyAmount) / TICK_INTERVAL);
                 boughtMaterials = true;
             }
 
