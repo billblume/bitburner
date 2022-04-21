@@ -13,10 +13,11 @@ const MIN_HACKING_STAT_WARFARE = 150;
 const MIN_COMBAT_STAT_WARFARE = 150;
 const VIGILANTE_RATIO = 0.25;
 const WARFARE_RATIO = 0.67;
+const TERRORISM_RATIO = 0.67;
 const MUG_RATIO = 0.5;
-const MIN_RESPECT = 100000;
 const MIN_POWER_RATIO = 0.75
 const CYCLE_TIME = 32000;
+const MAX_GANG_SIZE = 12;
 
 const MEMBER_NAMES = [
     'Alice',
@@ -230,7 +231,9 @@ function getNextTask(ns: NS, gangInfo: GangGenInfo, memberInfo: GangMemberInfo):
         }
     }
 
-    if (gangInfo.territory < 1 && ! ns.gang.canRecruitMember()) {
+    const atMaxGangSize = ns.gang.getMemberNames().length >= MAX_GANG_SIZE;
+
+    if (gangInfo.territory < 1 && atMaxGangSize) {
         if (
             (gangInfo.isHacking && avgHackingStat >= MIN_HACKING_STAT_WARFARE)
             || (! gangInfo.isHacking && avgCombatStat >= MIN_COMBAT_STAT_WARFARE)
@@ -245,16 +248,20 @@ function getNextTask(ns: NS, gangInfo: GangGenInfo, memberInfo: GangMemberInfo):
         // TODO
         return 'Ransomware';
     } else {
-        if (avgCombatStat >= MIN_COMBAT_STAT_TERRORISM && memberInfo.earnedRespect < MIN_RESPECT) {
-            return 'Terrorism';
-        } else if (avgCombatStat >= MIN_COMBAT_STAT_TRAFFIC_ARMS) {
-            return 'Traffick Illegal Arms';
-        } else {
-            if (rand < MUG_RATIO) {
-                return 'Mug People';
-            } else {
-                return 'Train Combat';
+        if (avgCombatStat >= MIN_COMBAT_STAT_TERRORISM && ! atMaxGangSize) {
+            if (rand < TERRORISM_RATIO) {
+                return 'Terrorism';
             }
+        }
+
+        if (avgCombatStat >= MIN_COMBAT_STAT_TRAFFIC_ARMS) {
+            return 'Traffick Illegal Arms';
+        }
+
+        if (rand < MUG_RATIO) {
+            return 'Mug People';
+        } else {
+            return 'Train Combat';
         }
     }
 }
