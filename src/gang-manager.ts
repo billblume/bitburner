@@ -4,7 +4,7 @@ const HACKER_EQUIP_TYPES = ['Rootkit', 'Vehicle'];
 const COMBAT_EQUIP_TYPES = ['Weapon', 'Armor', 'Vehicle'];
 const BUDGET_RATIO = 0.01;
 const ASCEND_STAT_MULT_THRESHOLD = 2;
-const MAX_WANTED_PENALTY = 10;
+const MAX_WANTED_PENALTY = 0.1;
 const MAX_HACKING_STAT_TRAINING = 100;
 const MAX_COMBAT_STAT_TRAINING = 100;
 const MIN_COMBAT_STAT_TERRORISM = 250;
@@ -225,7 +225,7 @@ function getNextTask(ns: NS, gangInfo: GangGenInfo, memberInfo: GangMemberInfo):
         return 'Train Combat'
     }
 
-    if (gangInfo.wantedPenalty > MAX_WANTED_PENALTY) {
+    if (1 - gangInfo.wantedPenalty > MAX_WANTED_PENALTY) {
         if (rand < VIGILANTE_RATIO) {
             return 'Vigilante Justice';
         }
