@@ -1,6 +1,7 @@
 import { NS } from '@ns'
+import { isSet } from 'lodash';
 
-const CYCLE_MILLIS = 30000;
+const CYCLE_MILLIS = 10000;
 const TICK_INTERVAL = 10000;
 const BONUS_TICK_INTERVAL = 1000;
 const UPGRADE_COST_WEIGHT = 100;
@@ -21,6 +22,9 @@ const WAREHOUSE_COST_WEIGHT_HIGH_USAGE = 5;
 const LARGE_WAREHOUSE_SIZE = 2000;
 const WAREHOUSE_COST_WEIGHT_SMALL = 50;
 const WAREHOUSE_COST_WEIGHT_LARGE = 500;
+const MAX_ASSIGNED_EMPLOYEES_PER_CYCLE = 10;
+const ASSIGN_TIME_MILLIS = 1000;
+const MIN_RESEARCH = 100000;
 
 const CORP_UPGRADES = [
     "Smart Factories",
@@ -61,6 +65,26 @@ const INDUSTRIES_WITH_PRODUCTS = [
     "Robotics",
     "Software",
     "Tobacco"
+];
+
+
+const RESEARCH_HIGH_TECH_LAB = 'Hi-Tech R&D Laboratory';
+const RESEARCH_UPGRADE_FULCRUM = 'uPgrade: Fulcrum';
+const RESEARCH_UPGRADE_CAP_I = '"uPgrade: Capacity.I';
+const RESEARCH_UPGRADE_CAP_II = '"uPgrade: Capacity.II';
+const RESEARCH_REST = [
+    'Automatic Drug Administration',
+    'CPH4 Injections',
+    'Drones',
+    'Drones - Assembly',
+    'Drones - Transport',
+    'Overclock',
+    'Self-Correcting Assemblers',
+    'Sti.mu',
+    'Go-Juice',
+    'JoyWire',
+    'AutoBrew',
+    'AutoPartyManager'
 ];
 
 interface IProdBonusMap {
@@ -105,13 +129,15 @@ export async function main(ns : NS) : Promise<void> {
         buyCorpUpgrades(ns);
         addCityExpansions(ns);
         growOffices(ns);
-        await assignEmployees(ns);
         hireAdvert(ns);
         makeProducts(ns);
         growWarehouses(ns);
+        buyResearch(ns);
         await buyMaterials(ns);
 
-        await ns.sleep(CYCLE_MILLIS);
+        const numAssigned = await assignEmployees(ns, MAX_ASSIGNED_EMPLOYEES_PER_CYCLE);
+        const sleepTime = Math.max(0, CYCLE_MILLIS - numAssigned * ASSIGN_TIME_MILLIS);
+        await ns.sleep(sleepTime);
     }
 }
 
@@ -211,8 +237,9 @@ function growOffices(ns: NS): void {
     }
 }
 
-async function assignEmployees(ns: NS): Promise<void> {
+async function assignEmployees(ns: NS, maxAssigned: number): Promise<number> {
     const corp = ns.corporation.getCorporation();
+    let numAssigned = 0;
 
     for (const division of corp.divisions) {
         for (const city of division.cities) {
@@ -249,11 +276,19 @@ async function assignEmployees(ns: NS): Promise<void> {
                     }
                 }
 
+                ns.print(`${division.name}:${city}: Assigning job for ${bestJob}`);
                 await ns.corporation.assignJob(division.name, city, employee.name, bestJob);
                 ++jobCounts[bestJob];
+                ++numAssigned;
+
+                if (numAssigned >= maxAssigned) {
+                    return numAssigned;
+                }
             }
         }
     }
+
+    return numAssigned;
 }
 
 function hireAdvert(ns: NS): void {
@@ -505,4 +540,59 @@ function computeBestMaterialRatios(industryType: string, warehouseSize: number):
         solution.re,
         solution.rob
     ];
+}
+
+function buyResearch(ns: NS): void {
+    const corp = ns.corporation.getCorporation();
+
+    for (const division of corp.divisions) {
+        if (! ns.corporation.hasResearched(division.name, RESEARCH_HIGH_TECH_LAB)) {
+            const cost = ns.corporation.getResearchCost(division.name, RESEARCH_HIGH_TECH_LAB);
+
+            if (division.research > 2 * cost) {
+                ns.print(`${division.name}: Researching ${RESEARCH_HIGH_TECH_LAB}`);
+                ns.corporation.research(division.name, RESEARCH_HIGH_TECH_LAB);
+            }
+
+            continue;
+        }
+
+        if (
+            division.products.length > 0 &&
+            (
+                ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_FULCRUM)
+                || ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_CAP_I)
+                || ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_CAP_II)
+            )
+        ) {
+            const cost = ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_FULCRUM) +
+                ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_CAP_I) +
+                ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_CAP_II);
+
+            if (division.research > 2 * cost) {
+                ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_FULCRUM}`);
+                ns.corporation.research(division.name, RESEARCH_UPGRADE_FULCRUM);
+                ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_CAP_I}`);
+                ns.corporation.research(division.name, RESEARCH_UPGRADE_CAP_I);
+                ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_CAP_II}`);
+                ns.corporation.research(division.name, RESEARCH_UPGRADE_CAP_II);
+            }
+
+            continue;
+        }
+
+        for (const research of RESEARCH_REST) {
+            if (! ns.corporation.hasResearched(division.name, research)) {
+                const cost = ns.corporation.getResearchCost(division.name, research);
+
+                if (division.research - cost > MIN_RESEARCH) {
+                    ns.print(`${division.name}: Researching ${research}`);
+                    ns.corporation.research(division.name, research);
+                }
+
+                break;
+            }
+        }
+
+    }
 }
