@@ -1,12 +1,11 @@
-import { NS } from '@ns'
-import { isSet } from 'lodash';
+import { NS, Division } from '@ns'
 
 const CYCLE_MILLIS = 10000;
 const TICK_INTERVAL = 10000;
 const BONUS_TICK_INTERVAL = 1000;
 const UPGRADE_COST_WEIGHT = 100;
 const EMPLOYEE_COST_WEIGHT_PROD_DEV_CITY = 1;
-const EMPLOYEE_COST_WEIGHT_OTHER_CITY_SMALL = 5;
+const EMPLOYEE_COST_WEIGHT_OTHER_CITY_SMALL = 1;
 const EMPLOYEE_COST_WEIGHT_OTHER_CITY_LARGE = 100;
 const ADVERT_COST_WEIGHT_PROD = 1;
 const ADVERT_COST_WEIGHT_NON_PROD = 100;
@@ -20,7 +19,7 @@ const WAREHOUSE_MATERIALS_RATIO = 0.5;
 const WAREHOUSE_HIGH_USAGE_RATIO = 0.8;
 const WAREHOUSE_COST_WEIGHT_HIGH_USAGE = 5;
 const LARGE_WAREHOUSE_SIZE = 2000;
-const WAREHOUSE_COST_WEIGHT_SMALL = 50;
+const WAREHOUSE_COST_WEIGHT_SMALL = 10;
 const WAREHOUSE_COST_WEIGHT_LARGE = 500;
 const MAX_ASSIGNED_EMPLOYEES_PER_CYCLE = 10;
 const ASSIGN_TIME_MILLIS = 1000;
@@ -128,12 +127,16 @@ export async function main(ns : NS) : Promise<void> {
     while (true) {
         buyCorpUpgrades(ns);
         addCityExpansions(ns);
-        growOffices(ns);
-        hireAdvert(ns);
-        makeProducts(ns);
-        growWarehouses(ns);
-        buyResearch(ns);
-        await buyMaterials(ns);
+        const divisions = getCorpDivisions(ns);
+
+        for (const division of divisions) {
+            hireAdvert(ns, division);
+            growOffices(ns, division);
+            growWarehouses(ns, division);
+            buyResearch(ns, division);
+            makeProducts(ns, division);
+            await buyMaterials(ns, division);
+        }
 
         const numAssigned = await assignEmployees(ns, MAX_ASSIGNED_EMPLOYEES_PER_CYCLE);
         const sleepTime = Math.max(0, CYCLE_MILLIS - numAssigned * ASSIGN_TIME_MILLIS);
@@ -147,7 +150,7 @@ function buyCorpUpgrades(ns: NS): void {
 
     for (const upgrade of CORP_UPGRADES) {
         const cost = ns.corporation.getUpgradeLevelCost(upgrade);
-        const hasProducts = corp.divisions.filter(division => division.products.length > 0).length > 0;
+        const hasProducts = corp.divisions.filter(division => INDUSTRIES_WITH_PRODUCTS.includes(division.type)).length > 0;
         const weight = hasProducts && upgrade == 'Wilson Analytics' ? 1 : UPGRADE_COST_WEIGHT;
         const weightedCost = cost * weight;
 
@@ -161,10 +164,10 @@ function buyCorpUpgrades(ns: NS): void {
 }
 
 function addCityExpansions(ns: NS) {
-    const corp = ns.corporation.getCorporation();
-    let funds = corp.funds;
+    let funds = ns.corporation.getCorporation().funds;
+    const divisions = getCorpDivisions(ns);
 
-    for (const division of corp.divisions) {
+    for (const division of divisions) {
         for (const city of CITIES) {
             if (! division.cities.includes(city)) {
                 ns.print(`${division.name}: Expanding to '${city}'.`);
@@ -195,53 +198,61 @@ function addCityExpansions(ns: NS) {
     }
 }
 
-function growOffices(ns: NS): void {
-    const corp = ns.corporation.getCorporation();
-    let funds = corp.funds;
+function growOffices(ns: NS, division: Division): void {
+    let funds = ns.corporation.getCorporation().funds;
+    const cities = division.cities;
+    cities.sort((city1, city2) => {
+        const size1 = ns.corporation.getOffice(division.name, city1).size;
+        const size2 = ns.corporation.getOffice(division.name, city2).size;
 
-    for (const division of corp.divisions) {
-        for (const city of division.cities) {
-            const office = ns.corporation.getOffice(division.name, city);
-            let weight;
+        if (size1 != size2) {
+            return size1 - size2;
+        }
 
-            if (division.products.length > 0 && city == PROD_DEV_CITY) {
-                weight = EMPLOYEE_COST_WEIGHT_PROD_DEV_CITY;
-            } else if (office.employees.length < OFFICE_GROW_SIZE_LARGE) {
-                weight = EMPLOYEE_COST_WEIGHT_OTHER_CITY_SMALL;
-            } else {
-                weight = EMPLOYEE_COST_WEIGHT_OTHER_CITY_LARGE;
-            }
+        return city1 < city2 ? -1 : (city1 > city2 ? 1 : 0);
+    });
 
-            const growSize = office.employees.length < OFFICE_GROW_SIZE_LARGE ?
-                OFFICE_GROW_SIZE_SMALL : OFFICE_GROW_SIZE_LARGE;
-            const cost = ns.corporation.getOfficeSizeUpgradeCost(division.name, city, growSize);
-            const weightedCost = weight * cost;
+    for (const city of cities) {
+        const office = ns.corporation.getOffice(division.name, city);
+        let weight;
 
-            if (weightedCost > funds) {
+        if (INDUSTRIES_WITH_PRODUCTS.includes(division.type) && city == PROD_DEV_CITY) {
+            weight = EMPLOYEE_COST_WEIGHT_PROD_DEV_CITY;
+        } else if (office.employees.length < OFFICE_GROW_SIZE_LARGE) {
+            weight = EMPLOYEE_COST_WEIGHT_OTHER_CITY_SMALL;
+        } else {
+            weight = EMPLOYEE_COST_WEIGHT_OTHER_CITY_LARGE;
+        }
+
+        const growSize = office.employees.length < OFFICE_GROW_SIZE_LARGE ?
+            OFFICE_GROW_SIZE_SMALL : OFFICE_GROW_SIZE_LARGE;
+        const cost = ns.corporation.getOfficeSizeUpgradeCost(division.name, city, growSize);
+        const weightedCost = weight * cost;
+
+        if (weightedCost > funds) {
+            continue;
+        }
+
+        ns.print(`${division.name}:${city}: Adding ${growSize} employees for ${ns.nFormat(cost, '$0.00a')}.`);
+        ns.corporation.upgradeOfficeSize(division.name, city, growSize);
+        funds -= cost;
+
+        for (let i = 0; i < growSize; ++i) {
+            const employee = ns.corporation.hireEmployee(division.name, city);
+
+            if (! employee) {
+                ns.print(`ERROR ${division.name}:${city}: Unable to hire employee.`);
                 continue;
-            }
-
-            ns.print(`${division.name}:${city}: Adding ${growSize} employees for ${ns.nFormat(cost, '$0.00a')}.`);
-            ns.corporation.upgradeOfficeSize(division.name, city, growSize);
-            funds -= cost;
-
-            for (let i = 0; i < growSize; ++i) {
-                const employee = ns.corporation.hireEmployee(division.name, city);
-
-                if (! employee) {
-                    ns.print(`ERROR ${division.name}:${city}: Unable to hire employee.`);
-                    continue;
-                }
             }
         }
     }
 }
 
 async function assignEmployees(ns: NS, maxAssigned: number): Promise<number> {
-    const corp = ns.corporation.getCorporation();
+    const divisions = getCorpDivisions(ns);
     let numAssigned = 0;
 
-    for (const division of corp.divisions) {
+    for (const division of divisions) {
         for (const city of division.cities) {
             const office = ns.corporation.getOffice(division.name, city);
             const jobCounts: IJobCountMap = {};
@@ -291,195 +302,189 @@ async function assignEmployees(ns: NS, maxAssigned: number): Promise<number> {
     return numAssigned;
 }
 
-function hireAdvert(ns: NS): void {
-    const corp = ns.corporation.getCorporation();
-    let funds = corp.funds;
+function hireAdvert(ns: NS, division: Division): void {
+    let funds = ns.corporation.getCorporation().funds;
 
-    for (const division of corp.divisions) {
-        const advertCount = ns.corporation.getHireAdVertCount(division.name);
-        const weight = advertCount == 0 || division.products.length > 0 ?
-            ADVERT_COST_WEIGHT_PROD : ADVERT_COST_WEIGHT_NON_PROD;
-        const cost = ns.corporation.getHireAdVertCost(division.name);
+    const advertCount = ns.corporation.getHireAdVertCount(division.name);
+    const weight = advertCount == 0 || INDUSTRIES_WITH_PRODUCTS.includes(division.type) ?
+        ADVERT_COST_WEIGHT_PROD : ADVERT_COST_WEIGHT_NON_PROD;
+    const cost = ns.corporation.getHireAdVertCost(division.name);
+    const weightedCost = cost * weight;
+
+    if (weightedCost <= funds) {
+        ns.print(`${division.name}: Increasing AdVert for ${ns.nFormat(cost, '$0.00a')}.`);
+        ns.corporation.hireAdVert(division.name);
+        funds -= cost;
+    }
+}
+
+function makeProducts(ns: NS, division: Division): void {
+    let funds = ns.corporation.getCorporation().funds;
+
+    if (! INDUSTRIES_WITH_PRODUCTS.includes(division.type)) {
+        return;
+    }
+
+    let isDevelopingProduct = false;
+    let oldestProductName = '';
+    let oldestProductId = 1000000;
+    let newestProductId = 0;
+    let largestPriceMultiplier = 1;
+
+    for (const productName of division.products) {
+        const product = ns.corporation.getProduct(division.name, productName);
+        const productId = parseInt(productName.substring(PROD_NAME_PREFIX.length));
+
+        if (productId < oldestProductId) {
+            oldestProductName = productName;
+            oldestProductId = productId;
+        }
+
+        if (productId > newestProductId) {
+            newestProductId = productId;
+        }
+
+        const sellCost = product.sCost;
+
+        if (typeof sellCost == 'string') {
+            const priceMultiplier = parseInt(sellCost.replace(/^MP\s*\*\s*/, ''));
+
+            if (priceMultiplier > largestPriceMultiplier) {
+                largestPriceMultiplier = priceMultiplier;
+            }
+        }
+
+        if (product.developmentProgress < 100) {
+            isDevelopingProduct = true;
+        } else if (! product.sCost) {
+            const sellCost = `MP*${largestPriceMultiplier}`;
+            ns.corporation.sellProduct(division.name, PROD_DEV_CITY, productName, 'MAX', sellCost, true);
+
+            if (ns.corporation.hasResearched(division.name, 'Market-TA.II')) {
+                ns.corporation.setProductMarketTA2(division.name, productName, true);
+            }
+        }
+    }
+
+    if (isDevelopingProduct) {
+        return;
+    }
+
+    const cost = DESIGN_INVEST + MARKETTING_INVEST;
+
+    if (cost > funds) {
+        return;
+    }
+
+    let maxProducts = 3;
+
+    if (ns.corporation.hasResearched(division.name, 'uPgrade: Capacity.I')) {
+        ++maxProducts;
+    }
+
+
+    if (ns.corporation.hasResearched(division.name, 'uPgrade: Capacity.II')) {
+        ++maxProducts;
+    }
+
+    if (division.products.length >= maxProducts) {
+        ns.corporation.discontinueProduct(division.name, oldestProductName);
+    }
+
+    const newProductName = `${PROD_NAME_PREFIX}${newestProductId + 1}`;
+    ns.print(`${division.name} Creating new product '${newProductName}' for ${ns.nFormat(cost, '$0.00a')}.`);
+    ns.corporation.makeProduct(division.name, PROD_DEV_CITY, newProductName, DESIGN_INVEST, MARKETTING_INVEST);
+    funds -= cost;
+}
+
+function growWarehouses(ns: NS, division: Division): void {
+    let funds = ns.corporation.getCorporation().funds;
+    const cities = division.cities.filter(city => ns.corporation.hasWarehouse(division.name, city));
+    cities.sort((city1, city2) => {
+        const size1 = ns.corporation.getWarehouse(division.name, city1).size;
+        const size2 = ns.corporation.getWarehouse(division.name, city2).size;
+
+        if (size1 != size2) {
+            return size1 - size2;
+        }
+
+        return city1 < city2 ? -1 : (city1 > city2 ? 1 : 0);
+    });
+
+    for (const city of cities) {
+        const warehouse = ns.corporation.getWarehouse(division.name, city);
+        const ratioUsed = warehouse.sizeUsed / warehouse.size;
+        const cost = ns.corporation.getUpgradeWarehouseCost(division.name, city);
+        const weight = ratioUsed > WAREHOUSE_HIGH_USAGE_RATIO ? WAREHOUSE_COST_WEIGHT_HIGH_USAGE :
+            (warehouse.size < LARGE_WAREHOUSE_SIZE ? WAREHOUSE_COST_WEIGHT_SMALL : WAREHOUSE_COST_WEIGHT_LARGE);
         const weightedCost = cost * weight;
 
         if (weightedCost <= funds) {
-            ns.print(`${division.name}: Increasing AdVert for ${ns.nFormat(cost, '$0.00a')}.`);
-            ns.corporation.hireAdVert(division.name);
+            ns.print(`${division.name}:${city}: Growing warehouse for ${ns.nFormat(cost, '$0.00a')}.`);
+            ns.corporation.upgradeWarehouse(division.name, city);
             funds -= cost;
         }
     }
 }
 
-function makeProducts(ns: NS): void {
-    const corp = ns.corporation.getCorporation();
-    let funds = corp.funds;
-
-    for (const division of corp.divisions) {
-        if (! INDUSTRIES_WITH_PRODUCTS.includes(division.type)) {
+async function buyMaterials(ns: NS, division: Division): Promise<void> {
+    for (const city of division.cities) {
+        if (! ns.corporation.hasWarehouse(division.name, city)) {
             continue;
         }
 
-        let isDevelopingProduct = false;
-        let oldestProductName = '';
-        let oldestProductId = 1000000;
-        let newestProductId = 0;
-        let largestPriceMultiplier = 1;
+        const warehouse = ns.corporation.getWarehouse(division.name, city);
+        const usableSpace = warehouse.size * WAREHOUSE_MATERIALS_RATIO;
 
-        for (const productName of division.products) {
-            const product = ns.corporation.getProduct(division.name, productName);
-            const productId = parseInt(productName.substring(PROD_NAME_PREFIX.length));
-
-            if (productId < oldestProductId) {
-                oldestProductName = productName;
-                oldestProductId = productId;
-            }
-
-            if (productId > newestProductId) {
-                newestProductId = productId;
-            }
-
-            const sellCost = product.sCost;
-
-            if (typeof sellCost == 'string') {
-                const priceMultiplier = parseInt(sellCost.replace(/^MP\s*\*\s*/, ''));
-
-                if (priceMultiplier > largestPriceMultiplier) {
-                    largestPriceMultiplier = priceMultiplier;
-                }
-            }
-
-            if (product.developmentProgress < 100) {
-                isDevelopingProduct = true;
-            } else if (! product.sCost) {
-                const sellCost = `MP*${largestPriceMultiplier}`;
-                ns.corporation.sellProduct(division.name, PROD_DEV_CITY, productName, 'MAX', sellCost, true);
-
-                if (ns.corporation.hasResearched(division.name, 'Market-TA.II')) {
-                    ns.corporation.setProductMarketTA2(division.name, productName, true);
-                }
-            }
-        }
-
-        if (isDevelopingProduct) {
+        if (warehouse.sizeUsed >= usableSpace) {
             continue;
         }
 
-        const cost = DESIGN_INVEST + MARKETTING_INVEST;
+        const [newAiAmount, newHwAmount, newReAmount, newRobAmount] = getBestMaterialRatios(division.type, usableSpace);
+        const aiMaterial = ns.corporation.getMaterial(division.name, city, MAT_AI);
+        const hwMaterial = ns.corporation.getMaterial(division.name, city, MAT_HW);
+        const reMaterial = ns.corporation.getMaterial(division.name, city, MAT_RE);
+        const robMaterial = ns.corporation.getMaterial(division.name, city, MAT_ROB);
+        const aiBuyAmount = Math.floor(newAiAmount - aiMaterial.qty);
+        const hwBuyAmount = Math.floor(newHwAmount - hwMaterial.qty);
+        const reBuyAmount = Math.floor(newReAmount - reMaterial.qty);
+        const robBuyAmount = Math.floor(newRobAmount - robMaterial.qty);
 
-        if (cost > funds) {
-            continue;
+        let boughtMaterials = false;
+
+        if (aiBuyAmount > 0) {
+            ns.print(`${division.name}:${city}: Bought ${aiBuyAmount} ${MAT_AI}.`);
+            ns.corporation.buyMaterial(division.name, city,  MAT_AI, aiBuyAmount / 10);
+            boughtMaterials = true;
         }
 
-        let maxProducts = 3;
-
-        if (ns.corporation.hasResearched(division.name, 'uPgrade: Capacity.I')) {
-            ++maxProducts;
+        if (hwBuyAmount > 0) {
+            ns.print(`${division.name}:${city}: Bought ${hwBuyAmount} ${MAT_HW}.`);
+            ns.corporation.buyMaterial(division.name, city, MAT_HW, hwBuyAmount / 10);
+            boughtMaterials = true;
         }
 
-
-        if (ns.corporation.hasResearched(division.name, 'uPgrade: Capacity.II')) {
-            ++maxProducts;
+        if (reBuyAmount > 0) {
+            ns.print(`${division.name}:${city}: Bought ${reBuyAmount} ${MAT_RE}.`);
+            ns.corporation.buyMaterial(division.name, city, MAT_RE, reBuyAmount / 10);
+            boughtMaterials = true;
         }
 
-        if (division.products.length >= maxProducts) {
-            ns.corporation.discontinueProduct(division.name, oldestProductName);
+        if (robBuyAmount > 0) {
+            ns.print(`${division.name}:${city}: Bought ${robBuyAmount} ${MAT_ROB}.`);
+            ns.corporation.buyMaterial(division.name, city, MAT_ROB, robBuyAmount / 10);
+            boughtMaterials = true;
         }
 
-        const newProductName = `${PROD_NAME_PREFIX}${newestProductId + 1}`;
-        ns.print(`${division.name} Creating new product '${newProductName}' for ${ns.nFormat(cost, '$0.00a')}.`);
-        ns.corporation.makeProduct(division.name, PROD_DEV_CITY, newProductName, DESIGN_INVEST, MARKETTING_INVEST);
-        funds -= cost;
-    }
-}
-
-function growWarehouses(ns: NS): void {
-    const corp = ns.corporation.getCorporation();
-    let funds = corp.funds;
-
-    for (const division of corp.divisions) {
-        for (const city of division.cities) {
-            if (! ns.corporation.hasWarehouse(division.name, city)) {
-                continue;
-            }
-
-            const warehouse = ns.corporation.getWarehouse(division.name, city);
-            const ratioUsed = warehouse.sizeUsed / warehouse.size;
-            const cost = ns.corporation.getUpgradeWarehouseCost(division.name, city);
-            const weight = ratioUsed > WAREHOUSE_HIGH_USAGE_RATIO ? WAREHOUSE_COST_WEIGHT_HIGH_USAGE :
-                (warehouse.size < LARGE_WAREHOUSE_SIZE ? WAREHOUSE_COST_WEIGHT_SMALL : WAREHOUSE_COST_WEIGHT_LARGE);
-            const weightedCost = cost * weight;
-
-            if (weightedCost <= funds) {
-                ns.print(`${division.name}:${city}: Growing warehouse for ${ns.nFormat(cost, '$0.00a')}.`);
-                ns.corporation.upgradeWarehouse(division.name, city);
-                funds -= cost;
-            }
-        }
-    }
-}
-
-async function buyMaterials(ns: NS): Promise<void> {
-    const corp = ns.corporation.getCorporation();
-
-    for (const division of corp.divisions) {
-        for (const city of division.cities) {
-            if (! ns.corporation.hasWarehouse(division.name, city)) {
-                continue;
-            }
-
-            const warehouse = ns.corporation.getWarehouse(division.name, city);
-            const usableSpace = warehouse.size * WAREHOUSE_MATERIALS_RATIO;
-
-            if (warehouse.sizeUsed >= usableSpace) {
-                continue;
-            }
-
-            const [newAiAmount, newHwAmount, newReAmount, newRobAmount] = getBestMaterialRatios(division.type, usableSpace);
-            const aiMaterial = ns.corporation.getMaterial(division.name, city, MAT_AI);
-            const hwMaterial = ns.corporation.getMaterial(division.name, city, MAT_HW);
-            const reMaterial = ns.corporation.getMaterial(division.name, city, MAT_RE);
-            const robMaterial = ns.corporation.getMaterial(division.name, city, MAT_ROB);
-            const aiBuyAmount = Math.floor(newAiAmount - aiMaterial.qty);
-            const hwBuyAmount = Math.floor(newHwAmount - hwMaterial.qty);
-            const reBuyAmount = Math.floor(newReAmount - reMaterial.qty);
-            const robBuyAmount = Math.floor(newRobAmount - robMaterial.qty);
-
-            let boughtMaterials = false;
-
-            if (aiBuyAmount > 0) {
-                ns.print(`${division.name}:${city}: Bought ${aiBuyAmount} ${MAT_AI}.`);
-                ns.corporation.buyMaterial(division.name, city,  MAT_AI, aiBuyAmount / TICK_INTERVAL);
-                boughtMaterials = true;
-            }
-
-            if (hwBuyAmount > 0) {
-                ns.print(`${division.name}:${city}: Bought ${hwBuyAmount} ${MAT_HW}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_HW, (hwBuyAmount) / TICK_INTERVAL);
-                boughtMaterials = true;
-            }
-
-            if (reBuyAmount > 0) {
-                ns.print(`${division.name}:${city}: Bought ${reBuyAmount} ${MAT_RE}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_RE, (reBuyAmount) / TICK_INTERVAL);
-                boughtMaterials = true;
-            }
-
-            if (robBuyAmount > 0) {
-                ns.print(`${division.name}:${city}: Bought ${robBuyAmount} ${MAT_ROB}.`);
-                ns.corporation.buyMaterial(division.name, city, MAT_ROB, (robBuyAmount) / TICK_INTERVAL);
-                boughtMaterials = true;
-            }
-
-            if (boughtMaterials) {
-                const tickInterval = ns.corporation.getBonusTime() > 0 ? BONUS_TICK_INTERVAL : TICK_INTERVAL;
-                await ns.sleep(tickInterval);
-                ns.corporation.buyMaterial(division.name, city, MAT_AI, 0);
-                ns.corporation.buyMaterial(division.name, city, MAT_HW, 0);
-                ns.corporation.buyMaterial(division.name, city, MAT_RE, 0);
-                ns.corporation.buyMaterial(division.name, city, MAT_ROB, 0);
-            } else {
-                await ns.sleep(0);
-            }
+        if (boughtMaterials) {
+            const tickInterval = ns.corporation.getBonusTime() > 0 ? BONUS_TICK_INTERVAL : TICK_INTERVAL;
+            await ns.sleep(tickInterval);
+            ns.corporation.buyMaterial(division.name, city, MAT_AI, 0);
+            ns.corporation.buyMaterial(division.name, city, MAT_HW, 0);
+            ns.corporation.buyMaterial(division.name, city, MAT_RE, 0);
+            ns.corporation.buyMaterial(division.name, city, MAT_ROB, 0);
+        } else {
+            await ns.sleep(0);
         }
     }
 }
@@ -542,57 +547,73 @@ function computeBestMaterialRatios(industryType: string, warehouseSize: number):
     ];
 }
 
-function buyResearch(ns: NS): void {
-    const corp = ns.corporation.getCorporation();
+function buyResearch(ns: NS, division: Division): void {
+    if (! ns.corporation.hasResearched(division.name, RESEARCH_HIGH_TECH_LAB)) {
+        const cost = ns.corporation.getResearchCost(division.name, RESEARCH_HIGH_TECH_LAB);
 
-    for (const division of corp.divisions) {
-        if (! ns.corporation.hasResearched(division.name, RESEARCH_HIGH_TECH_LAB)) {
-            const cost = ns.corporation.getResearchCost(division.name, RESEARCH_HIGH_TECH_LAB);
-
-            if (division.research > 2 * cost) {
-                ns.print(`${division.name}: Researching ${RESEARCH_HIGH_TECH_LAB}`);
-                ns.corporation.research(division.name, RESEARCH_HIGH_TECH_LAB);
-            }
-
-            continue;
+        if (division.research > 2 * cost) {
+            ns.print(`${division.name}: Researching ${RESEARCH_HIGH_TECH_LAB}`);
+            ns.corporation.research(division.name, RESEARCH_HIGH_TECH_LAB);
         }
 
-        if (
-            division.products.length > 0 &&
-            (
-                ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_FULCRUM)
-                || ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_CAP_I)
-                || ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_CAP_II)
-            )
-        ) {
-            const cost = ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_FULCRUM) +
-                ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_CAP_I) +
-                ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_CAP_II);
-
-            if (division.research > 2 * cost) {
-                ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_FULCRUM}`);
-                ns.corporation.research(division.name, RESEARCH_UPGRADE_FULCRUM);
-                ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_CAP_I}`);
-                ns.corporation.research(division.name, RESEARCH_UPGRADE_CAP_I);
-                ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_CAP_II}`);
-                ns.corporation.research(division.name, RESEARCH_UPGRADE_CAP_II);
-            }
-
-            continue;
-        }
-
-        for (const research of RESEARCH_REST) {
-            if (! ns.corporation.hasResearched(division.name, research)) {
-                const cost = ns.corporation.getResearchCost(division.name, research);
-
-                if (division.research - cost > MIN_RESEARCH) {
-                    ns.print(`${division.name}: Researching ${research}`);
-                    ns.corporation.research(division.name, research);
-                }
-
-                break;
-            }
-        }
-
+        return;
     }
+
+    if (
+        INDUSTRIES_WITH_PRODUCTS.includes(division.type) &&
+        (
+            ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_FULCRUM)
+            || ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_CAP_I)
+            || ! ns.corporation.hasResearched(division.name, RESEARCH_UPGRADE_CAP_II)
+        )
+    ) {
+        const cost = ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_FULCRUM) +
+            ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_CAP_I) +
+            ns.corporation.getResearchCost(division.name, RESEARCH_UPGRADE_CAP_II);
+
+        if (division.research > 2 * cost) {
+            ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_FULCRUM}`);
+            ns.corporation.research(division.name, RESEARCH_UPGRADE_FULCRUM);
+            ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_CAP_I}`);
+            ns.corporation.research(division.name, RESEARCH_UPGRADE_CAP_I);
+            ns.print(`${division.name}: Researching ${RESEARCH_UPGRADE_CAP_II}`);
+            ns.corporation.research(division.name, RESEARCH_UPGRADE_CAP_II);
+        }
+
+        return;
+    }
+
+    for (const research of RESEARCH_REST) {
+        if (! ns.corporation.hasResearched(division.name, research)) {
+            const cost = ns.corporation.getResearchCost(division.name, research);
+
+            if (division.research - cost > MIN_RESEARCH) {
+                ns.print(`${division.name}: Researching ${research}`);
+                ns.corporation.research(division.name, research);
+            }
+
+            break;
+        }
+    }
+}
+
+function getCorpDivisions(ns: NS): Division[] {
+    const corp = ns.corporation.getCorporation();
+    const divisions = corp.divisions;
+    divisions.sort((div1, div2) => {
+        const makesProducts1 = INDUSTRIES_WITH_PRODUCTS.includes(div1.type);
+        const makesProducts2 = INDUSTRIES_WITH_PRODUCTS.includes(div2.type);
+
+        if (makesProducts1 && ! makesProducts2) {
+            return -1;
+        }
+
+        if (makesProducts2 && ! makesProducts1) {
+            return 1;
+        }
+
+        return div1.name < div2.name ? -1 : (div2.name > div2.name ? 1 : 0);
+    });
+
+    return divisions;
 }
