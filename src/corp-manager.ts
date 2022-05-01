@@ -18,12 +18,15 @@ const MARKETTING_INVEST = 1e9;
 const WAREHOUSE_MATERIALS_RATIO = 0.5;
 const WAREHOUSE_HIGH_USAGE_RATIO = 0.8;
 const WAREHOUSE_COST_WEIGHT_HIGH_USAGE = 5;
+const MEDIUM_WAREHOUSE_SIZE = 300;
 const LARGE_WAREHOUSE_SIZE = 2000;
-const WAREHOUSE_COST_WEIGHT_SMALL = 10;
+const WAREHOUSE_COST_WEIGHT_SMALL = 1;
+const WAREHOUSE_COST_WEIGHT_MEDIUM = 10;
 const WAREHOUSE_COST_WEIGHT_LARGE = 500;
 const MAX_ASSIGNED_EMPLOYEES_PER_CYCLE = 10;
 const ASSIGN_TIME_MILLIS = 1000;
 const MIN_RESEARCH = 100000;
+const NUM_HIRE_ADVERTS_PER_CYCLE = 5;
 
 const CORP_UPGRADES = [
     "Smart Factories",
@@ -66,11 +69,12 @@ const INDUSTRIES_WITH_PRODUCTS = [
     "Tobacco"
 ];
 
-
 const RESEARCH_HIGH_TECH_LAB = 'Hi-Tech R&D Laboratory';
+const RESEARCH_MARKET_TA_I = 'Market-TA.I';
+const RESEARCH_MARKET_TA_II = 'Market-TA.II';
 const RESEARCH_UPGRADE_FULCRUM = 'uPgrade: Fulcrum';
-const RESEARCH_UPGRADE_CAP_I = '"uPgrade: Capacity.I';
-const RESEARCH_UPGRADE_CAP_II = '"uPgrade: Capacity.II';
+const RESEARCH_UPGRADE_CAP_I = 'uPgrade: Capacity.I';
+const RESEARCH_UPGRADE_CAP_II = 'uPgrade: Capacity.II';
 const RESEARCH_REST = [
     'Automatic Drug Administration',
     'CPH4 Injections',
@@ -105,6 +109,28 @@ const PROD_BONUS_MATERIALS: IProdBonusMap = {
     'Tobacco':           [ 0.15, 0.15, 0.15, 0.20 ],
     'Water Utilities':   [ 0.40, 0.00, 0.50, 0.40 ]
 };
+
+interface IProdMatMap {
+    [ industryType: string ]: string[];
+}
+
+const PRODUCED_MATERIALS: IProdMatMap = {
+    'Agriculture':       [ 'Plants', 'Food' ],
+    'Chemical':          [ 'Chemicals' ],
+    'Computer Hardware': [ 'Hardware' ],
+    'Energy':            [ 'Energy' ],
+    'Fishing':           [ 'Food' ],
+    'Food':              [],
+    'Healthcare':        [],
+    'Mining':            [ 'Metal' ],
+    'Pharmaceutical':    [ 'Drugs' ],
+    'RealEstate':        [ 'RealEstate' ],
+    'Robotics':          [ 'Robots' ],
+    'Software':          [ 'AICores' ],
+    'Tobacco':           [],
+    'Water Utilities':   [ 'Water' ]
+};
+
 interface IJobCountMap {
     [ job: string ]: number;
 }
@@ -125,7 +151,6 @@ export async function main(ns : NS) : Promise<void> {
     ns.enableLog('print');
 
     while (true) {
-        buyCorpUpgrades(ns);
         addCityExpansions(ns);
         const divisions = getCorpDivisions(ns);
 
@@ -135,11 +160,12 @@ export async function main(ns : NS) : Promise<void> {
             growWarehouses(ns, division);
             buyResearch(ns, division);
             makeProducts(ns, division);
-            await buyMaterials(ns, division);
         }
 
+        buyCorpUpgrades(ns);
+        const boughtMaterials = await buyMaterials(ns);
         const numAssigned = await assignEmployees(ns, MAX_ASSIGNED_EMPLOYEES_PER_CYCLE);
-        const sleepTime = Math.max(0, CYCLE_MILLIS - numAssigned * ASSIGN_TIME_MILLIS);
+        const sleepTime = boughtMaterials ? 0 : Math.max(0, CYCLE_MILLIS - numAssigned * ASSIGN_TIME_MILLIS);
         await ns.sleep(sleepTime);
     }
 }
@@ -192,6 +218,10 @@ function addCityExpansions(ns: NS) {
                     funds -= cost;
 
                     ns.corporation.setSmartSupply(division.name, city, true);
+
+                    for (const materialName of PRODUCED_MATERIALS[division.type]) {
+                        ns.corporation.sellMaterial(division.name, city, materialName, 'MAX', 'MP');
+                    }
                 }
             }
         }
@@ -304,17 +334,22 @@ async function assignEmployees(ns: NS, maxAssigned: number): Promise<number> {
 
 function hireAdvert(ns: NS, division: Division): void {
     let funds = ns.corporation.getCorporation().funds;
+    let advertCount = ns.corporation.getHireAdVertCount(division.name);
 
-    const advertCount = ns.corporation.getHireAdVertCount(division.name);
-    const weight = advertCount == 0 || INDUSTRIES_WITH_PRODUCTS.includes(division.type) ?
-        ADVERT_COST_WEIGHT_PROD : ADVERT_COST_WEIGHT_NON_PROD;
-    const cost = ns.corporation.getHireAdVertCost(division.name);
-    const weightedCost = cost * weight;
+    for (let i = 0; i < NUM_HIRE_ADVERTS_PER_CYCLE; ++i) {
+        const weight = advertCount == 0 || INDUSTRIES_WITH_PRODUCTS.includes(division.type) ?
+            ADVERT_COST_WEIGHT_PROD : ADVERT_COST_WEIGHT_NON_PROD;
+        const cost = ns.corporation.getHireAdVertCost(division.name);
+        const weightedCost = cost * weight;
 
-    if (weightedCost <= funds) {
+        if (weightedCost > funds) {
+            break;
+        }
+
         ns.print(`${division.name}: Increasing AdVert for ${ns.nFormat(cost, '$0.00a')}.`);
         ns.corporation.hireAdVert(division.name);
         funds -= cost;
+        ++advertCount;
     }
 }
 
@@ -416,7 +451,8 @@ function growWarehouses(ns: NS, division: Division): void {
         const ratioUsed = warehouse.sizeUsed / warehouse.size;
         const cost = ns.corporation.getUpgradeWarehouseCost(division.name, city);
         const weight = ratioUsed > WAREHOUSE_HIGH_USAGE_RATIO ? WAREHOUSE_COST_WEIGHT_HIGH_USAGE :
-            (warehouse.size < LARGE_WAREHOUSE_SIZE ? WAREHOUSE_COST_WEIGHT_SMALL : WAREHOUSE_COST_WEIGHT_LARGE);
+            (warehouse.size >= LARGE_WAREHOUSE_SIZE ? WAREHOUSE_COST_WEIGHT_LARGE :
+                (warehouse.size >= MEDIUM_WAREHOUSE_SIZE ? WAREHOUSE_COST_WEIGHT_MEDIUM : WAREHOUSE_COST_WEIGHT_SMALL));
         const weightedCost = cost * weight;
 
         if (weightedCost <= funds) {
@@ -427,66 +463,80 @@ function growWarehouses(ns: NS, division: Division): void {
     }
 }
 
-async function buyMaterials(ns: NS, division: Division): Promise<void> {
-    for (const city of division.cities) {
-        if (! ns.corporation.hasWarehouse(division.name, city)) {
-            continue;
-        }
+async function buyMaterials(ns: NS): Promise<boolean> {
+    const divisions = getCorpDivisions(ns);
+    let boughtMaterials = false;
 
-        const warehouse = ns.corporation.getWarehouse(division.name, city);
-        const usableSpace = warehouse.size * WAREHOUSE_MATERIALS_RATIO;
+    for (const division of divisions) {
+        for (const city of division.cities) {
+            if (! ns.corporation.hasWarehouse(division.name, city)) {
+                continue;
+            }
 
-        if (warehouse.sizeUsed >= usableSpace) {
-            continue;
-        }
+            const warehouse = ns.corporation.getWarehouse(division.name, city);
+            const usableSpace = warehouse.size * WAREHOUSE_MATERIALS_RATIO;
 
-        const [newAiAmount, newHwAmount, newReAmount, newRobAmount] = getBestMaterialRatios(division.type, usableSpace);
-        const aiMaterial = ns.corporation.getMaterial(division.name, city, MAT_AI);
-        const hwMaterial = ns.corporation.getMaterial(division.name, city, MAT_HW);
-        const reMaterial = ns.corporation.getMaterial(division.name, city, MAT_RE);
-        const robMaterial = ns.corporation.getMaterial(division.name, city, MAT_ROB);
-        const aiBuyAmount = Math.floor(newAiAmount - aiMaterial.qty);
-        const hwBuyAmount = Math.floor(newHwAmount - hwMaterial.qty);
-        const reBuyAmount = Math.floor(newReAmount - reMaterial.qty);
-        const robBuyAmount = Math.floor(newRobAmount - robMaterial.qty);
+            if (warehouse.sizeUsed >= usableSpace) {
+                continue;
+            }
 
-        let boughtMaterials = false;
+            const [newAiAmount, newHwAmount, newReAmount, newRobAmount] = getBestMaterialRatios(division.type, usableSpace);
+            const aiMaterial = ns.corporation.getMaterial(division.name, city, MAT_AI);
+            const hwMaterial = ns.corporation.getMaterial(division.name, city, MAT_HW);
+            const reMaterial = ns.corporation.getMaterial(division.name, city, MAT_RE);
+            const robMaterial = ns.corporation.getMaterial(division.name, city, MAT_ROB);
+            const aiBuyAmount = Math.floor(newAiAmount - aiMaterial.qty);
+            const hwBuyAmount = Math.floor(newHwAmount - hwMaterial.qty);
+            const reBuyAmount = Math.floor(newReAmount - reMaterial.qty);
+            const robBuyAmount = Math.floor(newRobAmount - robMaterial.qty);
 
-        if (aiBuyAmount > 0) {
-            ns.print(`${division.name}:${city}: Bought ${aiBuyAmount} ${MAT_AI}.`);
-            ns.corporation.buyMaterial(division.name, city,  MAT_AI, aiBuyAmount / 10);
-            boughtMaterials = true;
-        }
+            if (aiBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${aiBuyAmount} ${MAT_AI}.`);
+                ns.corporation.buyMaterial(division.name, city,  MAT_AI, aiBuyAmount / 10);
+                boughtMaterials = true;
+            }
 
-        if (hwBuyAmount > 0) {
-            ns.print(`${division.name}:${city}: Bought ${hwBuyAmount} ${MAT_HW}.`);
-            ns.corporation.buyMaterial(division.name, city, MAT_HW, hwBuyAmount / 10);
-            boughtMaterials = true;
-        }
+            if (hwBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${hwBuyAmount} ${MAT_HW}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_HW, hwBuyAmount / 10);
+                boughtMaterials = true;
+            }
 
-        if (reBuyAmount > 0) {
-            ns.print(`${division.name}:${city}: Bought ${reBuyAmount} ${MAT_RE}.`);
-            ns.corporation.buyMaterial(division.name, city, MAT_RE, reBuyAmount / 10);
-            boughtMaterials = true;
-        }
+            if (reBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${reBuyAmount} ${MAT_RE}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_RE, reBuyAmount / 10);
+                boughtMaterials = true;
+            }
 
-        if (robBuyAmount > 0) {
-            ns.print(`${division.name}:${city}: Bought ${robBuyAmount} ${MAT_ROB}.`);
-            ns.corporation.buyMaterial(division.name, city, MAT_ROB, robBuyAmount / 10);
-            boughtMaterials = true;
-        }
-
-        if (boughtMaterials) {
-            const tickInterval = ns.corporation.getBonusTime() > 0 ? BONUS_TICK_INTERVAL : TICK_INTERVAL;
-            await ns.sleep(tickInterval);
-            ns.corporation.buyMaterial(division.name, city, MAT_AI, 0);
-            ns.corporation.buyMaterial(division.name, city, MAT_HW, 0);
-            ns.corporation.buyMaterial(division.name, city, MAT_RE, 0);
-            ns.corporation.buyMaterial(division.name, city, MAT_ROB, 0);
-        } else {
-            await ns.sleep(0);
+            if (robBuyAmount > 0) {
+                ns.print(`${division.name}:${city}: Bought ${robBuyAmount} ${MAT_ROB}.`);
+                ns.corporation.buyMaterial(division.name, city, MAT_ROB, robBuyAmount / 10);
+                boughtMaterials = true;
+            }
         }
     }
+
+    if (boughtMaterials) {
+        const tickInterval = ns.corporation.getBonusTime() > 0 ? BONUS_TICK_INTERVAL : TICK_INTERVAL;
+        await ns.sleep(tickInterval);
+
+        for (const division of divisions) {
+            for (const city of division.cities) {
+                if (! ns.corporation.hasWarehouse(division.name, city)) {
+                    continue;
+                }
+
+                ns.corporation.buyMaterial(division.name, city, MAT_AI, 0);
+                ns.corporation.buyMaterial(division.name, city, MAT_HW, 0);
+                ns.corporation.buyMaterial(division.name, city, MAT_RE, 0);
+                ns.corporation.buyMaterial(division.name, city, MAT_ROB, 0);
+            }
+        }
+    } else {
+        await ns.sleep(0);
+    }
+
+    return boughtMaterials;
 }
 
 function getBestMaterialRatios(industryType: string, warehouseSize: number): [number, number, number, number] {
@@ -558,6 +608,24 @@ function buyResearch(ns: NS, division: Division): void {
 
         return;
     }
+
+    if (
+        ! ns.corporation.hasResearched(division.name, RESEARCH_MARKET_TA_I)
+        && ! ns.corporation.hasResearched(division.name, RESEARCH_MARKET_TA_II)
+    ) {
+        const cost = ns.corporation.getResearchCost(division.name, RESEARCH_MARKET_TA_I)
+            + ns.corporation.getResearchCost(division.name, RESEARCH_MARKET_TA_II);
+
+        if (division.research > 2 * cost) {
+            ns.print(`${division.name}: Researching ${RESEARCH_MARKET_TA_I}`);
+            ns.corporation.research(division.name, RESEARCH_MARKET_TA_I);
+            ns.print(`${division.name}: Researching ${RESEARCH_MARKET_TA_II}`);
+            ns.corporation.research(division.name, RESEARCH_MARKET_TA_II);
+        }
+
+        return;
+    }
+
 
     if (
         INDUSTRIES_WITH_PRODUCTS.includes(division.type) &&
