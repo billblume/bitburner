@@ -15,6 +15,7 @@ const MIN_BLACK_OP_SUCCESS_CHANCE = 0.9;
 const OVERCLOCK_LEVELING_THRESHOLD = 30;
 const SKILL_OVERCLOCK = 'Overclock';
 const CITY_SWITCH_THRESHOLD = 0.9;
+const BONUS_TIME_MULTIPLIER = 5;
 
 const CITIES = [
     'Aevum',
@@ -85,7 +86,13 @@ export async function main(ns : NS) : Promise<void> {
             return;
         }
 
-        await ns.sleep(actionTime);
+        const bonusTime = ns.bladeburner.getBonusTime();
+
+        if (actionTime <= bonusTime) {
+            await ns.sleep(actionTime / BONUS_TIME_MULTIPLIER);
+        } else {
+            await ns.sleep(actionTime);
+        }
 
         if (growPop) {
             const newEstPop = ns.bladeburner.getCityEstimatedPopulation(city);
