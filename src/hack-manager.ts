@@ -19,6 +19,8 @@ const HACKNET_MAX_HASH_CAPACITY_RATIO = 0.8;
 const MAX_WEAKEN_TIME = 5 * 60;
 const HACK_MONEY_FRACTION = 0.5;
 const MIN_HACK_THREADS_FRACTION = 0.1;
+const STANEK_THREAD_FRACTION = 0.25;
+const DUMMY_STANEK_SERVER = 'stanek';
 
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
@@ -125,7 +127,8 @@ function spendHacknetHashes(ns: NS, targetHostnames: ServerThreads[]): void {
             }
         }
 
-        const nonMinSecTargets = targetHostnames.filter(target => ns.getServerMinSecurityLevel(target.hostname) > 1);
+        const nonMinSecTargets = targetHostnames.filter(target =>
+            target.hostname != DUMMY_STANEK_SERVER && ns.getServerMinSecurityLevel(target.hostname) > 1);
 
         if (nonMinSecTargets.length > 0) {
             success = spendHashes(ns, 'Reduce Minimum Security', nonMinSecTargets[0].hostname);
@@ -347,9 +350,25 @@ function crackServers(ns: NS, hostnames: string[]): void {
 
 function getBestServers(ns: NS, hostnames: string[], availThreads: number): ServerThreads[] {
     ns.print(`INFO: There are ${availThreads} available server threads.`);
-    const serverScores = getServerScores(ns, hostnames, availThreads);
+
+    const fragments = ns.stanek.activeFragments();
     const bestServers: ServerThreads[] = [];
     const serverDescrs: string[] = [];
+
+    if (fragments.length > 0) {
+        const stanekThreads = Math.floor(availThreads * STANEK_THREAD_FRACTION);
+
+        if (stanekThreads > 0) {
+            bestServers.push({
+                hostname: DUMMY_STANEK_SERVER,
+                threads: stanekThreads
+            });
+            serverDescrs.push(`${DUMMY_STANEK_SERVER}:${stanekThreads}`);
+            availThreads -= stanekThreads;
+        }
+    }
+
+    const serverScores = getServerScores(ns, hostnames, availThreads);
     let bestWeakenServer: string|null = null;
     let bestWeakenScore = 0;
     const minHackThreads = availThreads * MIN_HACK_THREADS_FRACTION;

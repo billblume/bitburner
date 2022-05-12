@@ -11,11 +11,14 @@ const RESERVED_HOME_RAM_WITH_CORP = 1200;
 const HACKNET_RAM_SCRIPTING_FRACTION = 0.5;
 const HACK_MONEY_FRACTION = 0.5;
 const PRINT_JOB_INFO = false;
+const DUMMY_STANEK_SERVER = 'stanek';
+const STANEK_CHARGE_TIME = 1000;
 
 const AGENT_SCRIPTS = [
     '/agent/grow.js',
     '/agent/hack.js',
-    '/agent/weaken.js'
+    '/agent/weaken.js',
+    '/agent/charge.js'
 ];
 
 export interface ServerThreads {
@@ -75,6 +78,16 @@ export class ServerHackScheduler {
                 stats: new ServerHackStats(hostname)
             }
         }
+
+        this.servers[DUMMY_STANEK_SERVER] = {
+            hostname: DUMMY_STANEK_SERVER,
+            rooted: false,
+            lastAction: 'none',
+            maxThreads: 0,
+            usedThreads: 0,
+            availableMoney: 0,
+            stats: new ServerHackStats(DUMMY_STANEK_SERVER)
+        }
     }
 
     async updateServerInfo(): Promise<void> {
@@ -85,6 +98,10 @@ export class ServerHackScheduler {
         }
 
         for (const hostname in this.servers) {
+            if (hostname == DUMMY_STANEK_SERVER) {
+                continue;
+            }
+
             const serverInfo = this.servers[hostname];
 
             if (! serverInfo.rooted) {
@@ -190,7 +207,11 @@ export class ServerHackScheduler {
         }
     }
 
-    private getNextAction(lastAction: string,targetHostname: string): string {
+    private getNextAction(lastAction: string, targetHostname: string): string {
+        if (targetHostname == DUMMY_STANEK_SERVER) {
+            return 'charge';
+        }
+
         const securityLevel = this.ns.getServerSecurityLevel(targetHostname);
         const hackFactor = Math.max(0, 100 - securityLevel);
         const minSecurityLevel = this.ns.getServerMinSecurityLevel(targetHostname);
@@ -233,6 +254,9 @@ export class ServerHackScheduler {
                     - (1 - HACK_MONEY_FRACTION) * this.ns.getServerMaxMoney(targetHostname)));
                 return Math.ceil(this.ns.hackAnalyzeThreads(targetHostname, hackAmount));
             }
+
+            case 'charge':
+                return 1000000000;
         }
 
         return 0;
@@ -260,8 +284,13 @@ export class ServerHackScheduler {
                 break;
 
             case 'hack':
-                script = '/agent/hack.js'
+                script = '/agent/hack.js';
                 runTime =  this.ns.getHackTime(targetHostname) / 1000;
+                break;
+
+            case 'charge':
+                script = '/agent/charge.js';
+                runTime =  this.getStanekChargeTime() / 1000;
                 break;
         }
 
@@ -277,8 +306,9 @@ export class ServerHackScheduler {
             }
 
             const serverThreads = Math.min(availThreads, remainingThreads);
+            const scriptArgs = targetHostname == DUMMY_STANEK_SERVER ? this.getStanekChargeArgs() : [targetHostname];
 
-            if (this.ns.exec(script, serverInfo.hostname, serverThreads, targetHostname)) {
+            if (this.ns.exec(script, serverInfo.hostname, serverThreads, ...scriptArgs)) {
                 serverInfo.usedThreads += serverThreads;
                 remainingThreads -= serverThreads;
                 allocatedServers.push({
@@ -286,8 +316,8 @@ export class ServerHackScheduler {
                     threads: serverThreads
                 });
             } else {
-                const usedRam = this.ns.getServerUsedRam(targetHostname);
-                const maxRam = this.ns.getServerMaxRam(targetHostname);
+                const usedRam = this.ns.getServerUsedRam(serverInfo.hostname);
+                const maxRam = this.ns.getServerMaxRam(serverInfo.hostname);
                 this.ns.print(`Error running script '${script} ${targetHostname}' on ${serverInfo.hostname} with ${serverThreads} threads.` +
                     `  (Used ${usedRam}GB, Max ${maxRam}GB)`);
             }
@@ -302,8 +332,10 @@ export class ServerHackScheduler {
             remainingTime: runTime
         })
 
-        const targetServerInfo = this.servers[targetHostname];
-        targetServerInfo.availableMoney = this.ns.getServerMoneyAvailable(targetHostname);
+        if (targetHostname != DUMMY_STANEK_SERVER) {
+            const targetServerInfo = this.servers[targetHostname];
+            targetServerInfo.availableMoney = this.ns.getServerMoneyAvailable(targetHostname);
+        }
     }
 
     private async waitForNextJob(): Promise<void> {
@@ -345,6 +377,24 @@ export class ServerHackScheduler {
         }
 
         this.runningJobs = newRunningJobs;
+    }
+
+    private getStanekChargeTime(): number {
+        const fragments = this.ns.stanek.activeFragments();
+
+        return fragments.length * STANEK_CHARGE_TIME;
+    }
+
+    private getStanekChargeArgs(): number[] {
+        const fragments = this.ns.stanek.activeFragments();
+        const args: number[] = [];
+
+        for (const fragment of fragments) {
+            args.push(fragment.x);
+            args.push(fragment.y);
+        }
+
+        return args;
     }
 
     printStats(): void {

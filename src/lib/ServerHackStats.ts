@@ -6,6 +6,7 @@ export class ServerHackStats {
     growTime: number;
     hackTime: number;
     weakenTime: number;
+    chargeTime: number;
     extractedMoney: number;
 
     constructor(hostname: string) {
@@ -14,6 +15,7 @@ export class ServerHackStats {
         this.growTime = 0;
         this.hackTime = 0;
         this.weakenTime = 0;
+        this.chargeTime = 0;
         this.extractedMoney = 0;
     }
 
@@ -32,7 +34,11 @@ export class ServerHackStats {
             case 'weaken':
                 this.weakenTime += time;
                 break;
-        }
+
+            case 'charge':
+                this.chargeTime += time;
+                break;
+            }
     }
 
     addMoney(money: number): void {
@@ -40,7 +46,7 @@ export class ServerHackStats {
     }
 
     toString(ns: NS): string {
-        const totalTime = this.growTime + this.hackTime + this.weakenTime;
+        const totalTime = this.growTime + this.hackTime + this.weakenTime + this.chargeTime;
         const availMoney = ns.getServerMoneyAvailable(this.hostname);
         const maxMoney = ns.getServerMaxMoney(this.hostname);
         const minSecLevel = ns.getServerMinSecurityLevel(this.hostname);
@@ -65,7 +71,7 @@ export class ServerHackStats {
     }
 
     toSummaryString(ns: NS): string {
-        const totalTime = this.growTime + this.hackTime + this.weakenTime;
+        const totalTime = this.growTime + this.hackTime + this.weakenTime + this.chargeTime;
         const moneyPerSec = totalTime > 0 ? this.extractedMoney / totalTime : 0;
 
         return ns.sprintf(
