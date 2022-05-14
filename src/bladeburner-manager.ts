@@ -257,12 +257,20 @@ function selectAction(ns: NS, lastAction: IAction, growPop: boolean): IAction {
     const city = ns.bladeburner.getCity();
     const chaos = ns.bladeburner.getCityChaos(city);
 
-    if (chaos > CHAOS_HIGH) {
-        ns.print(`Picking ${Action.Diplomacy} because chaos is high.`);
-        return { type: ActionType.General, name: Action.Diplomacy };
-    }
+    if (
+        chaos > CHAOS_HIGH ||
+        (chaos > CHAOS_LOW && (lastAction.name == Action.Diplomacy || lastAction.name == Action.StealthRetirement))
+    ) {
+        const bestAction = getBestAction(ns, [
+            { type: ActionType.Operations, name: Action.StealthRetirement },
+            { type: ActionType.General, name: Action.Diplomacy }
+        ], true, true);
 
-    if (chaos > CHAOS_LOW && lastAction.name == Action.Diplomacy) {
+        if (bestAction) {
+            ns.print(`Picking ${bestAction.name} because chaos is high.`);
+            return bestAction;
+        }
+
         ns.print(`Picking ${Action.Diplomacy} because chaos is high.`);
         return { type: ActionType.General, name: Action.Diplomacy };
     }
