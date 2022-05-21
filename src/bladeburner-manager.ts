@@ -379,9 +379,11 @@ function getBestAction(ns: NS, actions: IAction[], filterZeroCounts = true, grow
 }
 
 function getBlackOpAction(ns: NS): IAction|null {
+    const rank = ns.bladeburner.getRank();
     const blackOpNames = ns.bladeburner.getBlackOpNames();
     const doableBlackOps = blackOpNames
-        .filter(name => ns.bladeburner.getActionCountRemaining(ActionType.BlackOps, name) > 0)
+        .filter(name => ns.bladeburner.getActionCountRemaining(ActionType.BlackOps, name) > 0
+            && ns.bladeburner.getBlackOpRank(name) <= rank)
         .sort((a, b) => ns.bladeburner.getBlackOpRank(a) - ns.bladeburner.getBlackOpRank(b));
 
     if (doableBlackOps.length == 0) {
@@ -389,12 +391,6 @@ function getBlackOpAction(ns: NS): IAction|null {
     }
 
     const nextBlackOps = doableBlackOps[0];
-    const rank = ns.bladeburner.getRank();
-
-    if (ns.bladeburner.getBlackOpRank(nextBlackOps) > rank) {
-        return null;
-    }
-
     const successChance = ns.bladeburner.getActionEstimatedSuccessChance(ActionType.BlackOps, nextBlackOps);
 
     if (successChance[0] < MIN_BLACK_OP_SUCCESS_CHANCE) {
