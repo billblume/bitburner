@@ -196,8 +196,15 @@ function addCityExpansions(ns: NS) {
     for (const division of divisions) {
         for (const city of CITIES) {
             if (! division.cities.includes(city)) {
+                const cost = ns.corporation.getExpandCityCost();
+
+                if (cost > funds) {
+                    continue;
+                }
+
                 ns.print(`${division.name}: Expanding to '${city}'.`);
                 ns.corporation.expandCity(division.name, city);
+                funds -= cost;
 
                 for (let i = 0; i < 3; ++i) {
                     const employee = ns.corporation.hireEmployee(division.name, city);
