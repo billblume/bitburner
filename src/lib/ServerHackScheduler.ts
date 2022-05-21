@@ -1,4 +1,4 @@
-import { NS } from '@ns'
+import { NS, ActiveFragment } from '@ns'
 import { getAllServerHostnames } from '/lib/server';
 import { ServerHackStats } from '/lib/ServerHackStats';
 
@@ -13,6 +13,7 @@ const HACK_MONEY_FRACTION = 0.5;
 const PRINT_JOB_INFO = false;
 const DUMMY_STANEK_SERVER = 'stanek';
 const STANEK_CHARGE_TIME = 1000;
+const FRAGMENT_TYPE_BOOSTER = 18;
 
 const AGENT_SCRIPTS = [
     '/agent/grow.js',
@@ -380,13 +381,13 @@ export class ServerHackScheduler {
     }
 
     private getStanekChargeTime(): number {
-        const fragments = this.ns.stanek.activeFragments();
+        const fragments = this.getChargeableFragments();
 
         return fragments.length * STANEK_CHARGE_TIME;
     }
 
     private getStanekChargeArgs(): number[] {
-        const fragments = this.ns.stanek.activeFragments();
+        const fragments = this.getChargeableFragments();
         const args: number[] = [];
 
         for (const fragment of fragments) {
@@ -395,6 +396,15 @@ export class ServerHackScheduler {
         }
 
         return args;
+    }
+
+    private getChargeableFragments(): ActiveFragment[] {
+        const activeFragments = this.ns.stanek.activeFragments();
+        const fragmentDefinitions = this.ns.stanek.fragmentDefinitions();
+        const chargeableFragmentIds = fragmentDefinitions
+            .filter(fragment => fragment.type != FRAGMENT_TYPE_BOOSTER)
+            .map(fragment => fragment.id);
+        return activeFragments.filter(fragment => chargeableFragmentIds.includes(fragment.id));
     }
 
     printStats(): void {

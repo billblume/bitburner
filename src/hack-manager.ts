@@ -172,7 +172,7 @@ async function buyAndCrackServers(ns: NS): Promise<string[]> {
     const budget = getServerBudget(ns);
     ns.print(`INFO: Server budget: ` + ns.nFormat(budget, '$0.00a'));
     await buyPrivateServers(ns, budget);
-    buyHacknetServers(ns, budget);
+    await buyHacknetServers(ns, budget);
     const allHostnames = getAllServerHostnames(ns);
     crackServers(ns, allHostnames);
     const rootedHostnames = allHostnames.filter(hostname => ns.hasRootAccess(hostname));
@@ -229,11 +229,13 @@ async function buyPrivateServers(ns: NS, budget: number): Promise<void> {
         ns.purchaseServer(hostname, ram);
         await ns.sleep(10);
     }
+
+    await ns.sleep(10);
 }
 
 let moneySpentOnHacknetServers = 0;
 
-function buyHacknetServers(ns: NS, budget: number): void {
+async function buyHacknetServers(ns: NS, budget: number): Promise<void> {
     budget -= moneySpentOnHacknetServers;
 
     while (budget > 0) {
@@ -245,7 +247,10 @@ function buyHacknetServers(ns: NS, budget: number): void {
 
         budget -= cost;
         moneySpentOnHacknetServers += cost;
+        await ns.sleep(10);
     }
+
+    await ns.sleep(10);
 }
 
 function buyCheapestHacknetUpgrade(ns: NS, budget: number): number {

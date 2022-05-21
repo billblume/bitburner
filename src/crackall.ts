@@ -45,8 +45,8 @@ function canBackdoor(ns: NS, hostname: string): boolean {
 
 async function backdoor(ns: NS, hostname: string):  Promise<void> {
     connect(ns, hostname);
-    await ns.installBackdoor();
-    ns.connect('home');
+    await ns.singularity.installBackdoor();
+    ns.singularity.connect('home');
 }
 
 function connect(ns: NS, targetHostname: string): void {
@@ -80,7 +80,7 @@ function connect(ns: NS, targetHostname: string): void {
     }
 
     for (const hostname of path) {
-        const success = ns.connect(hostname);
+        const success = ns.singularity.connect(hostname);
 
         if (!success) {
             ns.tprint(`Unable to connect to server: ${hostname}`);

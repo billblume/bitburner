@@ -21,7 +21,7 @@ export async function main(ns : NS) : Promise<void> {
             stat = 'dexterity';
         }
 
-        const success = ns.gymWorkout(GYM, stat, true);
+        const success = ns.singularity.gymWorkout(GYM, stat, true);
 
         if (! success) {
             return;

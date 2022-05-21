@@ -264,7 +264,7 @@ function selectAction(ns: NS, lastAction: IAction, growPop: boolean): IAction {
         const bestAction = getBestAction(ns, [
             { type: ActionType.Operations, name: Action.StealthRetirement },
             { type: ActionType.General, name: Action.Diplomacy }
-        ], true, true);
+        ]);
 
         if (bestAction) {
             ns.print(`Picking ${bestAction.name} because chaos is high.`);
@@ -284,16 +284,12 @@ function selectAction(ns: NS, lastAction: IAction, growPop: boolean): IAction {
 
     const assassinationSuccessChance =
         ns.bladeburner.getActionEstimatedSuccessChance(ActionType.Operations, Action.Assassination);
+    const highSuccessChanceSpread = assassinationSuccessChance[1] > 0 &&
+        assassinationSuccessChance[0] / assassinationSuccessChance[1] < MIN_SUCCESS_CHANCE_SPREAD;
 
-    if (
-        assassinationSuccessChance[1] > 0 &&
-        assassinationSuccessChance[0] / assassinationSuccessChance[1] < MIN_SUCCESS_CHANCE_SPREAD
-    ) {
-        ns.print(`Picking ${Action.FieldAnalysis} because success chance spread is too large.`);
-        return { type: ActionType.General, name: Action.FieldAnalysis };
-    }
-
-    if (growPop) {
+    // Note: A high success chance spread and a large difference between estimated and actual pop is connected.
+    // More exactly, the pop spread determines the success chance spread.
+    if (highSuccessChanceSpread || growPop) {
         const bestAction = getBestAction(ns, [
             { type: ActionType.Operations, name: Action.Undercover },
             { type: ActionType.Operations, name: Action.Investigation },
