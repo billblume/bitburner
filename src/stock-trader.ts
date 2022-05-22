@@ -32,9 +32,13 @@ export async function main(ns : NS) : Promise<void> {
         stocks.sort((a, b) => b.estProfit - a.estProfit);
         // stocks.forEach(stock => stock.printForecast());
 
+        await ns.sleep(1);
         sellFlippedPositions(ns, stocks);
+        await ns.sleep(1);
         sellUnderperformers(ns, stocks);
+        await ns.sleep(1);
         buyStocks(ns, stocks);
+        await ns.sleep(1);
 
         if (tick % REPORT_FREQUENCY == 0) {
             printReport(ns, stocks);
