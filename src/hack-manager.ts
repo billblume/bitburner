@@ -21,6 +21,7 @@ const HACK_MONEY_FRACTION = 0.5;
 const MIN_HACK_THREADS_FRACTION = 0.1;
 const STANEK_THREAD_FRACTION = 0.25;
 const DUMMY_STANEK_SERVER = 'stanek';
+const STANEK_FACTION = 'Church of the Machine God';
 
 export async function main(ns : NS) : Promise<void> {
     ns.disableLog('ALL');
@@ -356,11 +357,11 @@ function crackServers(ns: NS, hostnames: string[]): void {
 function getBestServers(ns: NS, hostnames: string[], availThreads: number): ServerThreads[] {
     ns.print(`INFO: There are ${availThreads} available server threads.`);
 
-    const fragments = ns.stanek.activeFragments();
+    const player = ns.getPlayer();
     const bestServers: ServerThreads[] = [];
     const serverDescrs: string[] = [];
 
-    if (fragments.length > 0) {
+    if (player.factions.includes(STANEK_FACTION)) {
         const stanekThreads = Math.floor(availThreads * STANEK_THREAD_FRACTION);
 
         if (stanekThreads > 0) {
